@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0a0820" />
+  <title>Snake Jr. 🐍</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- Title -->
+    <section id="scene-title" class="scene active">
+      <button id="btn-mute" class="icon-btn title-mute" aria-label="Mute">🔊</button>
+      <h1 class="logo">SNAKE<span class="jr">JR.</span></h1>
+      <div class="tagline">Easy to slither. Hard to GOAT.</div>
+      <div class="best-pill">★ Best: <span id="title-best">0</span></div>
+      <div class="title-actions">
+        <button id="btn-play" class="bubble-btn pink">▶ Play</button>
+        <button id="btn-board" class="bubble-btn cyan">🏆 Top Scores</button>
+      </div>
+      <div class="skin-select-wrap">
+        <h3>Snake Skin</h3>
+        <div id="skin-select"></div>
+      </div>
+      <div class="meme-strip">Eat the <span>✨ 67 ✨</span> apple</div>
+    </section>
+
+    <!-- Game -->
+    <section id="scene-game" class="scene">
+      <div class="hud">
+        <div class="hud-pill" id="hud-score">0</div>
+        <div class="hud-right">
+          <div class="hud-combo" id="hud-combo"></div>
+          <div class="hud-pill small" id="hud-best">★ 0</div>
+        </div>
+      </div>
+      <canvas id="game-canvas"></canvas>
+      <div id="banner" data-color="cyan"></div>
+    </section>
+
+    <!-- Submit -->
+    <section id="scene-submit" class="scene">
+      <div class="panel">
+        <h2>You're toast! 🍞</h2>
+        <div class="score-big" id="submit-final-score">0</div>
+        <div class="status-line" id="submit-status"></div>
+        <div class="unlocks-line" id="submit-unlocks"></div>
+
+        <div class="field-label">Pick your vibe</div>
+        <div id="emoji-row"></div>
+
+        <div class="field-label">Your 3-letter name</div>
+        <div class="initials-row">
+          <div class="initial-slot" id="init-0">A</div>
+          <div class="initial-slot" id="init-1">A</div>
+          <div class="initial-slot" id="init-2">A</div>
+        </div>
+        <div class="initials-controls">
+          <button id="init-down" class="bubble-btn small">▼</button>
+          <button id="init-up"   class="bubble-btn small">▲</button>
+          <button id="init-next" class="bubble-btn small">Next →</button>
+        </div>
+
+        <div class="submit-actions">
+          <button id="btn-skip"   class="bubble-btn small">Skip</button>
+          <button id="btn-submit" class="bubble-btn pink">Save Score</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Leaderboard -->
+    <section id="scene-leaderboard" class="scene">
+      <h2>🏆 Top Scores</h2>
+      <div class="board-status" id="board-status">Loading…</div>
+      <ol id="board-list"></ol>
+      <div class="board-actions">
+        <button id="btn-replay" class="bubble-btn pink">▶ Play Again</button>
+        <button id="btn-home"   class="bubble-btn cyan">⌂ Home</button>
+      </div>
+    </section>
+
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
