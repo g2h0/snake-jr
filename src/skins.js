@@ -5,40 +5,53 @@ import { SKIN_UNLOCKS } from "./config.js";
 import { storage } from "./storage.js";
 
 export const SKINS = {
+  // Starter keeps the id "default" so the storage fallback stays valid.
   default: {
-    name: "Classic",
-    head:  ["#36f1ff", "#0d5b8c"],
-    body:  ["#ff3bd4", "#6e1b8a"],
-    glow:  "#ff3bd4",
+    name: "Blue Racer",
+    head:  ["#a8f0ff", "#1060d8"],
+    body:  ["#3bc4ff", "#0a2a8a"],
+    glow:  "#3bc4ff",
   },
-  strawberry: {
-    name: "Strawberry",
-    head:  ["#ffb3c1", "#a3133c"],
-    body:  ["#ff5d7b", "#5a0a1f"],
-    glow:  "#ff5d7b",
+  coral: {
+    name: "Coral Snake",
+    head:  ["#ffe14a", "#ff2a2a"],
+    body:  ["#ff3a2a", "#1a0606"],
+    glow:  "#ff5a3a",
   },
-  bubblegum: {
-    name: "Bubblegum",
-    head:  ["#ffe5fb", "#ff5fc8"],
-    body:  ["#ffc4f0", "#aa3aa6"],
-    glow:  "#ffb3ec",
+  corn: {
+    name: "Corn Snake",
+    head:  ["#ffe1b0", "#ff6a00"],
+    body:  ["#ff5d3d", "#8a1500"],
+    glow:  "#ff6a2a",
   },
-  lava: {
-    name: "Lava",
-    head:  ["#fff0a8", "#ff6a00"],
-    body:  ["#ffae3d", "#8a1500"],
-    glow:  "#ff6a00",
+  blackmamba: {
+    name: "Black Mamba",
+    head:  ["#9fb4c8", "#1b2330"],
+    body:  ["#5a6b7d", "#0a0e14"],
+    glow:  "#7fe3ff",
   },
-  galaxy: {
-    name: "Galaxy",
-    head:  ["#dac4ff", "#3b1d7a"],
-    body:  ["#8a4bff", "#150a3d"],
-    glow:  "#8a4bff",
+  ballpython: {
+    name: "Ball Python",
+    head:  ["#ffe9a8", "#c8920a"],
+    body:  ["#e0a83a", "#2e2000"],
+    glow:  "#ffc83a",
   },
-  rainbow: {
-    name: "Rainbow",
+  greentree: {
+    name: "Green Tree Python",
+    head:  ["#e6ffce", "#19c93a"],
+    body:  ["#3bff62", "#055e1a"],
+    glow:  "#3bff62",
+  },
+  kingcobra: {
+    name: "King Cobra",
+    head:  ["#fff0a0", "#7a6a1e"],
+    body:  ["#9a8a2e", "#15140a"],
+    glow:  "#e8c84a",
+  },
+  rainbowboa: {
+    name: "Rainbow Boa",
     head:  ["#ffffff", "#36f1ff"],
-    body:  null, // signal: cycle hue per segment
+    body:  null, // signal: cycle hue per segment (the boa's iridescent shimmer)
     glow:  "#ffffff",
   },
 };

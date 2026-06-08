@@ -152,7 +152,7 @@ export function createRenderer(canvas) {
       ctx.shadowBlur = isHead ? 18 : 10;
       let fill;
       if (skin.body === null) {
-        // rainbow: hue rotates per segment + over time
+        // Rainbow Boa: hue rotates per segment + over time
         const hue = (i * 22 + t / 16) % 360;
         fill = `hsl(${hue} 100% 65%)`;
       } else {

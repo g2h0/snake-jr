@@ -44,12 +44,14 @@ export const EMOJIS = [
 
 // Skin unlock thresholds (personal best). Default always unlocked.
 export const SKIN_UNLOCKS = [
-  { id: "default",    name: "Classic",    unlockAt: 0 },
-  { id: "strawberry", name: "Strawberry", unlockAt: 25 },
-  { id: "bubblegum",  name: "Bubblegum",  unlockAt: 50 },
-  { id: "lava",       name: "Lava",       unlockAt: 67 },
-  { id: "galaxy",     name: "Galaxy",     unlockAt: 100 },
-  { id: "rainbow",    name: "Rainbow",    unlockAt: 150 },
+  { id: "default",    name: "Blue Racer",        unlockAt: 0 },
+  { id: "coral",      name: "Coral Snake",       unlockAt: 15 },
+  { id: "corn",       name: "Corn Snake",        unlockAt: 25 },
+  { id: "blackmamba", name: "Black Mamba",       unlockAt: 33 },
+  { id: "ballpython", name: "Ball Python",       unlockAt: 50 },
+  { id: "greentree",  name: "Green Tree Python", unlockAt: 67 },
+  { id: "kingcobra",  name: "King Cobra",        unlockAt: 100 },
+  { id: "rainbowboa", name: "Rainbow Boa",       unlockAt: 150 },
 ];
 
 export const SWIPE_THRESHOLD_PX = 24;
