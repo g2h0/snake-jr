@@ -2,7 +2,7 @@
 // Scenes: title -> game -> submit -> leaderboard -> title.
 
 import { createGame } from "./game.js";
-import { sfx, unlock as unlockAudio, setMuted, isMuted } from "./audio.js";
+import { sfx, music, unlock as unlockAudio, setMuted, isMuted } from "./audio.js";
 import { haptics } from "./haptics.js";
 import { storage } from "./storage.js";
 import { fetchTop, submitScore, flushQueue } from "./leaderboard.js";
@@ -24,6 +24,17 @@ function showScene(name) {
     el.classList.toggle("active", k === name);
   }
 }
+
+// Browsers block audio until a user gesture. On the first tap anywhere, unlock
+// the audio context and kick off the menu music (unless we're already in a game).
+let audioKicked = false;
+function kickAudio() {
+  if (audioKicked) return;
+  audioKicked = true;
+  unlockAudio();
+  if (!scenes.game.classList.contains("active")) music.start();
+}
+window.addEventListener("pointerdown", kickAudio);
 
 // --- Title screen wiring ---
 const bestEl       = $("#title-best");
@@ -84,15 +95,18 @@ const hudScore  = $("#hud-score");
 const hudCombo  = $("#hud-combo");
 const hudBest   = $("#hud-best");
 const bannerEl  = $("#banner");
+const pauseOverlay = $("#pause-overlay");
 
 let gameInstance = null;
 let lastRunMeta = null;
 
 function startGame() {
+  music.stop();
   hudBest.textContent = `★ ${storage.getBest()}`;
   hudScore.textContent = 0;
   hudCombo.textContent = "";
   bannerEl.classList.remove("show");
+  pauseOverlay.classList.remove("show");
   showScene("game");
   const canvas = $("#game-canvas");
   if (gameInstance) gameInstance.destroy();
@@ -123,6 +137,42 @@ function showBanner(text, color) {
   bannerEl.classList.add("show");
   setTimeout(() => bannerEl.classList.remove("show"), 1400);
 }
+
+// --- Pause ---
+function pauseGame() {
+  if (!gameInstance || !gameInstance.isAlive() || gameInstance.isPaused()) return;
+  gameInstance.pause();
+  pauseOverlay.classList.add("show");
+  sfx.uiTap();
+  haptics.tap();
+}
+
+function resumeGame() {
+  if (!gameInstance || !gameInstance.isPaused()) return;
+  pauseOverlay.classList.remove("show");
+  gameInstance.resume();
+  sfx.uiTap();
+  haptics.tap();
+}
+
+function quitToMenu() {
+  pauseOverlay.classList.remove("show");
+  if (gameInstance) { gameInstance.stop(); gameInstance.destroy(); gameInstance = null; }
+  sfx.uiTap();
+  haptics.tap();
+  refreshTitle();
+  showScene("title");
+  music.start();
+}
+
+$("#btn-pause").addEventListener("click", pauseGame);
+$("#btn-resume").addEventListener("click", resumeGame);
+$("#btn-quit").addEventListener("click", quitToMenu);
+
+// Auto-pause if the kid switches apps / the tab is hidden mid-game.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && scenes.game.classList.contains("active")) pauseGame();
+});
 
 // --- Submit scene ---
 const emojiRow  = $("#emoji-row");
@@ -229,6 +279,7 @@ function openSubmit() {
     submitStatus.textContent = "";
   }
   showScene("submit");
+  music.start();
 }
 
 async function doSubmit() {
@@ -264,6 +315,7 @@ const boardStatus = $("#board-status");
 
 async function openLeaderboard({ highlightId } = {}) {
   showScene("leaderboard");
+  music.start();
   boardList.innerHTML = "";
   boardStatus.textContent = "Loading…";
   const result = await fetchTop(50);
@@ -299,7 +351,7 @@ async function openLeaderboard({ highlightId } = {}) {
 }
 
 $("#btn-replay").addEventListener("click", () => { sfx.uiTap(); haptics.tap(); startGame(); });
-$("#btn-home").addEventListener("click", () => { sfx.uiTap(); haptics.tap(); refreshTitle(); showScene("title"); });
+$("#btn-home").addEventListener("click", () => { sfx.uiTap(); haptics.tap(); refreshTitle(); showScene("title"); music.start(); });
 
 // --- Boot ---
 refreshTitle();

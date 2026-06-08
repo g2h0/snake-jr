@@ -28,6 +28,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSki
 
   let snake, dir, queuedDir, apple, golden, score, tickMs, lastApplePos;
   let alive = false;
+  let paused = false;
   let lastTickAt = 0;
   let lastEatAt = 0;
   let combo = 0;
@@ -60,6 +61,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSki
     apple = spawnFood();
     lastApplePos = { ...apple };
     alive = true;
+    paused = false;
     onScoreChange?.(score, combo);
   }
 
@@ -97,7 +99,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSki
   }
 
   function applyDirection(d) {
-    if (!alive) return;
+    if (!alive || paused) return;
     if (opposite(d, dir)) return; // ignore 180 reversal
     queuedDir = d;
   }
@@ -259,9 +261,25 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSki
     },
     stop() {
       alive = false;
+      paused = false;
       cancelAnimationFrame(rafId);
       window.removeEventListener("resize", onResize);
     },
+    pause() {
+      if (!alive || paused) return;
+      paused = true;
+      cancelAnimationFrame(rafId);
+    },
+    resume() {
+      if (!alive || !paused) return;
+      paused = false;
+      // Reset timing so the snake doesn't fast-forward over the paused gap.
+      lastTickAt = performance.now();
+      lastFrame = 0;
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(frame);
+    },
+    isPaused() { return paused; },
     destroy() {
       cancelAnimationFrame(rafId);
       window.removeEventListener("resize", onResize);

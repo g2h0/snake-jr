@@ -327,6 +327,41 @@ body::before {
 #banner[data-color="violet"] { color: var(--neon-violet); }
 #banner[data-color="gold"]   { color: var(--neon-gold); }
 
+/* Pause button lives inside the HUD, which is click-through by default. */
+.hud-pause {
+  pointer-events: auto;
+  width: 40px; height: 40px;
+  font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ===== Pause overlay ===== */
+.pause-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 6, 24, 0.74);
+  backdrop-filter: blur(6px);
+}
+.pause-overlay.show { display: flex; }
+.pause-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 28px 36px;
+}
+.pause-card h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: clamp(40px, 11vw, 76px);
+  color: var(--neon-cyan);
+  text-shadow: 0 0 24px rgba(54, 241, 255, 0.7);
+}
+
 @keyframes bannerPop {
   0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.4) rotate(-8deg); }
   20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15) rotate(2deg); }

@@ -39,10 +39,18 @@
         <div class="hud-right">
           <div class="hud-combo" id="hud-combo"></div>
           <div class="hud-pill small" id="hud-best">★ 0</div>
+          <button id="btn-pause" class="icon-btn hud-pause" aria-label="Pause">⏸</button>
         </div>
       </div>
       <canvas id="game-canvas"></canvas>
       <div id="banner" data-color="cyan"></div>
+      <div id="pause-overlay" class="pause-overlay">
+        <div class="pause-card">
+          <h2>Paused</h2>
+          <button id="btn-resume" class="bubble-btn pink">▶ Resume</button>
+          <button id="btn-quit" class="bubble-btn cyan">⌂ Quit to Menu</button>
+        </div>
+      </div>
     </section>
 
     <!-- Submit -->
