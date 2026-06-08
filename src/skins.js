@@ -54,6 +54,12 @@ export const SKINS = {
     body:  null, // signal: cycle hue per segment (the boa's iridescent shimmer)
     glow:  "#ffffff",
   },
+  titanoboa: {
+    name: "Titanoboa",
+    head:  ["#ffcf6a", "#8a3408"],
+    body:  ["#d2691e", "#0a0604"],
+    glow:  "#ff7a1a",
+  },
 };
 
 export function unlockedSkins(best = storage.getBest()) {

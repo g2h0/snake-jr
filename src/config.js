@@ -52,6 +52,7 @@ export const SKIN_UNLOCKS = [
   { id: "greentree",  name: "Green Tree Python", unlockAt: 67 },
   { id: "kingcobra",  name: "King Cobra",        unlockAt: 100 },
   { id: "rainbowboa", name: "Rainbow Boa",       unlockAt: 150 },
+  { id: "titanoboa",  name: "Titanoboa",         unlockAt: 200 },
 ];
 
 export const SWIPE_THRESHOLD_PX = 24;
