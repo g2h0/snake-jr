@@ -22,17 +22,44 @@ export const SCORE = {
   goldenChance: 0.05,
   goldenLifetimeMs: 8000,
   comboCapMultiplier: 5,
-  comboWindowMultiplier: 4, // window = currentTick * this
+  comboWindowMs: 2600, // eat the next apple within this to chain a combo
 };
 
 export const MILESTONES = [
-  { at: 10,  text: "NICE!",   color: "cyan" },
-  { at: 25,  text: "FIRE!",   color: "pink" },
-  { at: 50,  text: "GOATED!", color: "violet" },
-  { at: 67,  text: "67!!!",   color: "gold" },
-  { at: 100, text: "SIGMA!",  color: "cyan" },
-  { at: 150, text: "GYATT!",  color: "pink" },
-  { at: 250, text: "OHIO!",   color: "violet" },
+  { at: 10,  text: "W START!",      color: "cyan" },
+  { at: 25,  text: "FIRE!",         color: "pink" },
+  { at: 33,  text: "HALF A 67!",    color: "violet" },
+  { at: 50,  text: "GOATED!",       color: "cyan" },
+  { at: 67,  text: "67!!!",         color: "gold" },
+  { at: 100, text: "SIGMA!",        color: "pink" },
+  { at: 134, text: "DOUBLE 67!!",   color: "gold" },
+  { at: 150, text: "MAX AURA!",     color: "violet" },
+  { at: 201, text: "TRIPLE 67!!!",  color: "gold" },
+  { at: 250, text: "OHIO FINAL BOSS!", color: "pink" },
+];
+
+// Rotating title-screen taglines — one is picked at random per visit.
+export const TAGLINES = [
+  "Easy to slither. Hard to GOAT.",
+  "Six!! Seven!!",
+  "100% aura farming",
+  "No cap, just apples",
+  "Very mindful. Very slithery.",
+  "Cooler than a Labubu",
+  "Zero brainrot. Okay, some.",
+  "Certified snake moment",
+];
+
+// Rotating game-over headings — kid-safe roasts.
+export const DEATH_HEADINGS = [
+  "You got cooked! 🍳",
+  "Womp womp 💀",
+  "You're toast! 🍞",
+  "GG! Run it back 🔁",
+  "−100 aura 📉",
+  "Snake.exe crashed out 🫠",
+  "That was lowkey bussin 🐍",
+  "Certified 6-7 moment 🙌",
 ];
 
 // Kid-safe emoji avatar set
@@ -40,6 +67,7 @@ export const EMOJIS = [
   "🔥","🐢","🦖","🌮","👽","🦄","🍕","🎮",
   "🐸","🦊","🍩","🚀","🌈","⚡","💎","🦦",
   "🐙","🍉","🪐","🍦","🐉","🦕","🐳","🧃",
+  "🗿","🥶","🫡","🧋","👾","🫧","🦥","🍄",
 ];
 
 // Skin unlock thresholds (personal best). Default always unlocked.
@@ -52,7 +80,7 @@ export const SKIN_UNLOCKS = [
   { id: "greentree",  name: "Green Tree Python", unlockAt: 67 },
   { id: "kingcobra",  name: "King Cobra",        unlockAt: 100 },
   { id: "rainbowboa", name: "Rainbow Boa",       unlockAt: 150 },
-  { id: "titanoboa",  name: "Titanoboa",         unlockAt: 200 },
+  { id: "titanoboa",  name: "Titanoboa",         unlockAt: 250 },
 ];
 
 export const SWIPE_THRESHOLD_PX = 24;

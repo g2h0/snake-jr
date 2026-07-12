@@ -44,8 +44,14 @@ export async function submitScore({ emoji, initials, score }) {
       body: JSON.stringify(entry),
     });
     if (!res.ok) {
-      storage.pushQueue(entry);
-      return { ok: false, reason: `http-${res.status}`, queued: true };
+      // 4xx means the server rejected the entry (validation) — retrying the
+      // same payload will never succeed, so don't queue it. 5xx may be
+      // transient, so queue for a retry on the next visit.
+      if (res.status >= 500) {
+        storage.pushQueue(entry);
+        return { ok: false, reason: `http-${res.status}`, queued: true };
+      }
+      return { ok: false, reason: `http-${res.status}`, queued: false };
     }
     const [row] = await res.json();
     return { ok: true, row };
@@ -68,7 +74,8 @@ export async function flushQueue() {
         headers: headers(),
         body: JSON.stringify(entry),
       });
-      if (!res.ok) remaining.push(entry);
+      // Keep only entries worth retrying — drop permanent (4xx) rejections.
+      if (!res.ok && res.status >= 500) remaining.push(entry);
     } catch {
       remaining.push(entry);
     }

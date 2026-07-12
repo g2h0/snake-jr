@@ -6,7 +6,7 @@ import { sfx, music, unlock as unlockAudio, setMuted, isMuted } from "./audio.js
 import { haptics } from "./haptics.js";
 import { storage } from "./storage.js";
 import { fetchTop, submitScore, flushQueue } from "./leaderboard.js";
-import { EMOJIS, SKIN_UNLOCKS } from "./config.js";
+import { EMOJIS, SKIN_UNLOCKS, TAGLINES, DEATH_HEADINGS } from "./config.js";
 import { unlockedSkins, newlyUnlocked, SKINS } from "./skins.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -39,10 +39,14 @@ window.addEventListener("pointerdown", kickAudio);
 // --- Title screen wiring ---
 const bestEl       = $("#title-best");
 const skinSelectEl = $("#skin-select");
+const taglineEl    = $("#tagline");
+
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function refreshTitle() {
   const best = storage.getBest();
   bestEl.textContent = best;
+  taglineEl.textContent = pick(TAGLINES);
   // skins
   skinSelectEl.innerHTML = "";
   const unlocked = new Set(unlockedSkins(best));
@@ -84,11 +88,18 @@ $("#btn-board").addEventListener("click", async () => {
   await openLeaderboard();
 });
 
-$("#btn-mute").addEventListener("click", () => {
-  const next = !isMuted();
-  setMuted(next);
-  $("#btn-mute").textContent = next ? "🔇" : "🔊";
-});
+// Mute lives on both the title screen and the in-game HUD; keep them in sync.
+function syncMuteUI() {
+  const icon = isMuted() ? "🔇" : "🔊";
+  $("#btn-mute").textContent = icon;
+  $("#btn-mute-game").textContent = icon;
+}
+function toggleMute() {
+  setMuted(!isMuted());
+  syncMuteUI();
+}
+$("#btn-mute").addEventListener("click", toggleMute);
+$("#btn-mute-game").addEventListener("click", toggleMute);
 
 // --- Game scene ---
 const hudScore  = $("#hud-score");
@@ -102,10 +113,13 @@ let lastRunMeta = null;
 
 function startGame() {
   music.stop();
-  hudBest.textContent = `★ ${storage.getBest()}`;
+  const runBest = storage.getBest();
+  let bestBeaten = false;
+  hudBest.textContent = `★ ${runBest}`;
+  hudBest.classList.remove("newbest");
   hudScore.textContent = 0;
   hudCombo.textContent = "";
-  bannerEl.classList.remove("show");
+  clearBanners();
   pauseOverlay.classList.remove("show");
   showScene("game");
   const canvas = $("#game-canvas");
@@ -116,26 +130,64 @@ function startGame() {
     onScoreChange(score, combo) {
       hudScore.textContent = score;
       hudCombo.textContent = combo > 1 ? `×${combo} 🔥` : "";
+      if (score > runBest) {
+        hudBest.textContent = `★ ${score}`;
+        hudBest.classList.add("newbest");
+        if (!bestBeaten && runBest > 0) {
+          bestBeaten = true;
+          showBanner("NEW BEST! 👑", "gold");
+        }
+      }
     },
     onMilestone(m) {
       showBanner(m.text, m.color);
     },
+    onGolden() {
+      showBanner("SIX SEVENNN!", "gold");
+    },
     onDeath({ score, prevBest, newBest }) {
       lastRunMeta = { score, prevBest, newBest, unlocks: newlyUnlocked(prevBest, newBest) };
-      setTimeout(() => openSubmit(), 700);
+      // Let the death shake/confetti play out, then tear the game down so the
+      // rAF loop and input listeners don't keep running behind the menus.
+      setTimeout(() => {
+        if (gameInstance) { gameInstance.destroy(); gameInstance = null; }
+        openSubmit();
+      }, 700);
     },
   });
   gameInstance.start();
 }
 
+// Banners queue up so back-to-back celebrations play one after another
+// instead of overwriting each other.
+const bannerQueue = [];
+let bannerTimer = null;
+
 function showBanner(text, color) {
-  bannerEl.textContent = text;
-  bannerEl.dataset.color = color;
+  bannerQueue.push({ text, color });
+  if (!bannerTimer) nextBanner();
+}
+
+function nextBanner() {
+  const b = bannerQueue.shift();
+  if (!b) { bannerTimer = null; return; }
+  bannerEl.textContent = b.text;
+  bannerEl.dataset.color = b.color;
   bannerEl.classList.remove("show");
   // force reflow to restart animation
   void bannerEl.offsetWidth;
   bannerEl.classList.add("show");
-  setTimeout(() => bannerEl.classList.remove("show"), 1400);
+  bannerTimer = setTimeout(() => {
+    bannerEl.classList.remove("show");
+    bannerTimer = setTimeout(nextBanner, 120);
+  }, 1400);
+}
+
+function clearBanners() {
+  bannerQueue.length = 0;
+  clearTimeout(bannerTimer);
+  bannerTimer = null;
+  bannerEl.classList.remove("show");
 }
 
 // --- Pause ---
@@ -157,6 +209,7 @@ function resumeGame() {
 
 function quitToMenu() {
   pauseOverlay.classList.remove("show");
+  clearBanners();
   if (gameInstance) { gameInstance.stop(); gameInstance.destroy(); gameInstance = null; }
   sfx.uiTap();
   haptics.tap();
@@ -254,6 +307,7 @@ window.addEventListener("keydown", (e) => {
 
 function openSubmit() {
   if (!lastRunMeta) return;
+  $("#submit-heading").textContent = pick(DEATH_HEADINGS);
   selectedEmoji = storage.getEmoji();
   selectedInitials = storage.getInitials().split("");
   activeInitialIdx = 0;
@@ -334,12 +388,14 @@ async function openLeaderboard({ highlightId } = {}) {
     if (highlightId && row.id === highlightId) li.classList.add("just-me");
     const rank = i + 1;
     const medal = rank === 1 ? "👑" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}`;
-    li.innerHTML = `
-      <span class="rank">${medal}</span>
-      <span class="avatar">${row.emoji}</span>
-      <span class="initials">${row.initials}</span>
-      <span class="score">${row.score}</span>
-    `;
+    // Build with textContent — emoji/initials come from the public table, so
+    // never trust them as HTML.
+    for (const [cls, value] of [["rank", medal], ["avatar", row.emoji], ["initials", row.initials], ["score", row.score]]) {
+      const span = document.createElement("span");
+      span.className = cls;
+      span.textContent = value;
+      li.appendChild(span);
+    }
     boardList.appendChild(li);
   });
   if (highlightId) {

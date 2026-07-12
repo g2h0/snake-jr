@@ -21,12 +21,12 @@ function eq(a, b) { return a.x === b.x && a.y === b.y; }
 function opposite(a, b) { return a.x === -b.x && a.y === -b.y; }
 function wrap(v, mod) { return ((v % mod) + mod) % mod; }
 
-export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSkin }) {
+export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGolden, getSkin }) {
   const renderer = createRenderer(canvas);
   const effects = createEffects();
   const input = createInput(canvas);
 
-  let snake, dir, queuedDir, apple, golden, score, tickMs, lastApplePos;
+  let snake, dir, queuedDirs, apple, golden, score, tickMs, lastApplePos;
   let alive = false;
   let paused = false;
   let lastTickAt = 0;
@@ -50,7 +50,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSki
       dir: DIRS.right,
     };
     dir = DIRS.right;
-    queuedDir = null;
+    queuedDirs = [];
     score = 0;
     tickMs = TICK.startMs;
     combo = 0;
@@ -100,16 +100,20 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSki
 
   function applyDirection(d) {
     if (!alive || paused) return;
-    if (opposite(d, dir)) return; // ignore 180 reversal
-    queuedDir = d;
+    // Compare against the last pending turn (or current heading) so a fast
+    // double-swipe queues both turns instead of dropping the first one.
+    const ref = queuedDirs.length ? queuedDirs[queuedDirs.length - 1] : dir;
+    if (opposite(d, ref)) return; // ignore 180 reversal
+    if (eq(d, ref)) return;       // no-op turn
+    if (queuedDirs.length >= 2) return;
+    queuedDirs.push(d);
   }
 
   function step(now) {
     if (!alive) return;
     // commit queued direction
-    if (queuedDir) {
-      dir = queuedDir;
-      queuedDir = null;
+    if (queuedDirs.length) {
+      dir = queuedDirs.shift();
       snake.dir = dir;
     }
     const head = snake.body[0];
@@ -147,15 +151,17 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSki
       }
 
       // combo logic
-      const window = tickMs * SCORE.comboWindowMultiplier;
-      if (now - lastEatAt < window) {
+      if (now - lastEatAt < SCORE.comboWindowMs) {
         combo = Math.min(SCORE.comboCapMultiplier, combo + 1);
       } else {
         combo = 1;
       }
       lastEatAt = now;
       const multiplier = Math.max(1, combo);
-      const points = gained * multiplier;
+      // The ✨67✨ apple is always worth exactly 67 — no combo multiplication.
+      // (It's the whole bit, and it keeps one lucky bite from unlocking
+      // every skin at once.) It still extends the combo chain.
+      const points = isGolden ? gained : gained * multiplier;
       score += points;
 
       // visuals + audio
@@ -167,11 +173,13 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSki
         effects.popup(px + cellPx / 2, py + cellPx / 2, `+${points} ✨`, "#ffe066");
         effects.burstConfetti(px + cellPx / 2, py + cellPx / 2, 36, ["#ffe066","#ff3bd4","#36f1ff","#fff"]);
         effects.shake(10, 250);
+        onGolden?.(points);
       } else {
         sfx.eat();
         haptics.eat();
-        const label = combo > 1 ? `+${points} ×${combo}` : `+${points}`;
-        effects.popup(px + cellPx / 2, py + cellPx / 2, label, combo > 1 ? "#ff3bd4" : "#36f1ff");
+        const maxed = combo >= SCORE.comboCapMultiplier;
+        const label = maxed ? `+${points} MAX AURA` : combo > 1 ? `+${points} ×${combo}` : `+${points}`;
+        effects.popup(px + cellPx / 2, py + cellPx / 2, label, maxed ? "#ffe066" : combo > 1 ? "#ff3bd4" : "#36f1ff");
         if (combo > 1) {
           sfx.combo(combo);
           haptics.combo();
@@ -182,17 +190,22 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, getSki
       // speed up
       tickMs = Math.max(TICK.minMs, tickMs - TICK.decreasePerApple);
 
-      // milestones
+      // milestones — a golden apple can cross several at once; celebrate only
+      // the highest so banners don't pile up.
+      let topMilestone = null;
       for (const m of MILESTONES) {
         if (!firedMilestones.has(m.at) && score >= m.at) {
           firedMilestones.add(m.at);
-          const size = renderer.getSize();
-          effects.rainConfetti(size.w, 80);
-          effects.shake(8, 320);
-          haptics.milestone();
-          sfx.milestone();
-          onMilestone?.(m);
+          topMilestone = m;
         }
+      }
+      if (topMilestone) {
+        const size = renderer.getSize();
+        effects.rainConfetti(size.w, 80);
+        effects.shake(8, 320);
+        haptics.milestone();
+        sfx.milestone();
+        onMilestone?.(topMilestone);
       }
 
       onScoreChange?.(score, combo);
