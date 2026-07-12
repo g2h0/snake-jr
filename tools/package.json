@@ -1,0 +1,11 @@
+{
+  "name": "snake-jr-tools",
+  "private": true,
+  "description": "Dev-only headless E2E smoke check for Snake Jr. Not needed to play or deploy the game.",
+  "scripts": {
+    "e2e": "node e2e-check.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

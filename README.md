@@ -87,9 +87,11 @@ For a custom subdomain like `snake.g2h0.xyz`, add a CNAME file with that hostnam
 | Speed | Increases with every apple eaten. |
 | 🍎 | +1 point. |
 | ✨ 67 ✨ | Rare golden apple, +67 points. Disappears after 8 seconds. |
-| Combo | Eat apples quickly to multiply score up to 5×. |
-| Milestones | Score 10/25/50/67/100/150/250 triggers a celebration banner. |
-| Skins | Unlock new snake skins by setting personal bests (25, 50, 67, 100, 150). |
+| Combo | Eat the next apple within ~2.6s to chain a combo, up to 5× (MAX AURA). Golden apples are always exactly +67 — no multiplier. |
+| Milestones | Score 10/25/33/50/67/100/134/150/201/250 triggers a celebration banner. |
+| Skins | Unlock new snake skins by setting personal bests (15, 25, 33, 50, 67, 100, 150, 250). |
+| Pause / Mute | ⏸ and 🔊 live in the top-right HUD. Auto-pauses if the app is backgrounded. |
+| Flavor | Title taglines and game-over headings rotate randomly from lists in `src/config.js` — refresh them as the memes age. |
 
 ## Project layout
 
@@ -109,8 +111,27 @@ snake_jr/
     ├── skins.js         # skin catalog + unlock logic
     ├── storage.js       # localStorage wrapper
     ├── leaderboard.js   # Supabase REST client
-    └── config.js        # constants + Supabase keys
+    └── config.js        # constants, meme text, Supabase keys
 ```
+
+Plus `tools/` — a dev-only headless E2E smoke check (see below). Not needed to play or deploy.
+
+## Development
+
+No build step: edit, reload. For an automated check that the whole game still works,
+there's a scripted headless-browser run in `tools/`:
+
+```bash
+cd tools
+npm install && npx playwright install chromium   # one-time (needs Node + Python on PATH)
+npm run e2e
+```
+
+It starts a local server and plays a real game with deterministic apple placement
+(`Math.random` is stubbed only inside the spawn functions), then asserts exact scores,
+the flat +67 golden apple, combo chaining up to ×5, skin-unlock thresholds, the
+death → submit → leaderboard flow, mute sync, and that the game loop fully stops after
+death. Screenshots land in `tools/screens/`. Run it after any gameplay change.
 
 ## Verification checklist
 
@@ -120,8 +141,12 @@ snake_jr/
 - [ ] Snake speeds up as score climbs
 - [ ] Self-collision triggers the score-entry screen
 - [ ] Wrapping around the wall works on all 4 sides
-- [ ] A golden ✨ apple appears occasionally and grants 67 points + confetti
-- [ ] Milestone banners fire at the scores in `config.js`
+- [ ] A golden ✨ apple appears occasionally and grants exactly 67 points + confetti + "SIX SEVENNN!" banner
+- [ ] Eating apples within ~2.6s of each other chains a combo (×2 up to ×5 "MAX AURA")
+- [ ] Milestone banners fire at the scores in `config.js`; back-to-back banners play in sequence, not over each other
+- [ ] Passing your personal best mid-run turns the ★ HUD pill gold and fires "NEW BEST! 👑"
+- [ ] Mute toggle works both on the title screen and in-game, and the two buttons stay in sync
+- [ ] After death, menus are idle — no game loop running in the background (`cd tools && npm run e2e` checks this)
 - [ ] Submitting a score posts to Supabase and appears at the top of the leaderboard
 - [ ] Reloading shows the same global leaderboard (proves global persistence)
 - [ ] On iPad Safari: no pinch-zoom or scroll while playing
