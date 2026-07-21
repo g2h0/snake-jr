@@ -1,9 +1,9 @@
 // Headless E2E smoke check for Snake Jr.
 //
-// One-time setup:   cd tools && npm install && npx playwright install chromium
+// One-time setup:   cd tools && npm install && npm run install-browser
 // Run:              npm run e2e            (from tools/)
 //
-// Starts its own static server (needs `python` on PATH), then plays a scripted
+// Starts its own Node static server, then plays a scripted
 // deterministic game: Math.random is stubbed ONLY inside spawnFood /
 // maybeSpawnGolden (detected via stack inspection) so apples and the golden
 // apple land in the snake's path on purpose. That makes exact scores, combos,
@@ -14,7 +14,7 @@
 //   scores: +1, +2 (x2 combo), +67 (golden, flat), +4 (x4), +5 (x5 MAX AURA) = 79
 // then the snake coils into itself to reach the submit screen.
 
-const { spawn } = require("child_process");
+const http = require("http");
 const path = require("path");
 const fs = require("fs");
 const { chromium } = require("playwright");
@@ -29,25 +29,71 @@ function check(label, ok, detail = "") {
   if (!ok) failures.push(label);
 }
 
-async function waitForServer(url, ms) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) {
+function startStaticServer(root, port) {
+  const mimeTypes = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+  };
+
+  const server = http.createServer((req, res) => {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      res.writeHead(405, { Allow: "GET, HEAD" });
+      res.end();
+      return;
+    }
+
+    let pathname;
     try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {}
-    await new Promise(r => setTimeout(r, 250));
-  }
-  throw new Error(`server at ${url} did not come up in ${ms}ms`);
+      pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+    } catch {
+      res.writeHead(400);
+      res.end("Bad request");
+      return;
+    }
+
+    const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+    const filePath = path.resolve(root, relativePath);
+    if (!filePath.startsWith(`${root}${path.sep}`)) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+
+    fs.readFile(filePath, (err, body) => {
+      if (err) {
+        res.writeHead(err.code === "ENOENT" ? 404 : 500);
+        res.end(err.code === "ENOENT" ? "Not found" : "Server error");
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+        "Cache-Control": "no-store",
+      });
+      res.end(req.method === "HEAD" ? undefined : body);
+    });
+  });
+
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => {
+      server.removeListener("error", reject);
+      resolve(server);
+    });
+  });
 }
 
 (async () => {
   fs.mkdirSync(SCREEN_DIR, { recursive: true });
-  const server = spawn("python", ["-m", "http.server", String(PORT)], { cwd: ROOT, stdio: "ignore" });
+  const server = await startStaticServer(ROOT, PORT);
+  let browser;
   try {
-    await waitForServer(`http://localhost:${PORT}/`, 10000);
-
-    const browser = await chromium.launch();
+    browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 820, height: 1080 } });
     const errors = [];
     page.on("console", m => { if (m.type() === "error") errors.push(m.text()); });
@@ -72,7 +118,7 @@ async function waitForServer(url, ms) {
       localStorage.clear(); // fresh personal best so the unlock list is exact
     });
 
-    await page.goto(`http://localhost:${PORT}/`);
+    await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForSelector("#btn-play");
     await page.waitForTimeout(800);
 
@@ -150,9 +196,9 @@ async function waitForServer(url, ms) {
 
     check("no console errors", errors.length === 0, JSON.stringify(errors));
 
-    await browser.close();
   } finally {
-    server.kill();
+    await browser?.close().catch(() => {});
+    await new Promise(resolve => server.close(resolve));
   }
 
   console.log(failures.length ? `\n${failures.length} check(s) FAILED` : "\nAll checks passed 🐍");

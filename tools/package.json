@@ -3,6 +3,7 @@
   "private": true,
   "description": "Dev-only headless E2E smoke check for Snake Jr. Not needed to play or deploy the game.",
   "scripts": {
+    "install-browser": "node node_modules/playwright/cli.js install chromium",
     "e2e": "node e2e-check.js"
   },
   "dependencies": {

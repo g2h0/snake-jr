@@ -123,7 +123,7 @@ there's a scripted headless-browser run in `tools/`:
 
 ```bash
 cd tools
-npm install && npx playwright install chromium   # one-time (needs Node + Python on PATH)
+npm install && npm run install-browser   # one-time (needs Node)
 npm run e2e
 ```
 
