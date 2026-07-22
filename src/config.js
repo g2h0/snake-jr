@@ -1,9 +1,13 @@
 // Snake Jr. — configuration
-// Paste your Supabase URL and anon key here after creating the project.
-// Both are safe to commit publicly — RLS in Supabase enforces the policy.
+// Paste your Supabase URL and publishable key here after creating the project.
+// Both are safe in a browser; RLS remains the actual data-access boundary.
+// The test override keeps E2E deterministic and prevents writes to production.
 
-export const SUPABASE_URL = "";   // e.g. "https://abcd1234.supabase.co"
-export const SUPABASE_ANON_KEY = ""; // public anon key from Supabase dashboard
+const SUPABASE_TEST_CONFIG = globalThis.__SNAKE_JR_TEST_CONFIG__;
+export const SUPABASE_URL = SUPABASE_TEST_CONFIG?.supabaseUrl
+  ?? "https://xeahvkovvqncathzdahf.supabase.co";
+export const SUPABASE_PUBLISHABLE_KEY = SUPABASE_TEST_CONFIG?.supabasePublishableKey
+  ?? "sb_publishable__j8hcbbK1wAquBii2uPw6w_QHe1XDFb";
 
 export const GRID = {
   cols: 20,

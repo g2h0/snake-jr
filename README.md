@@ -25,48 +25,43 @@ The game itself works offline without Supabase — you just won't have a global 
 
 Go to [supabase.com](https://supabase.com) → New project. Pick any region, give it a name and database password. Wait ~2 minutes for it to provision.
 
-### 2. Create the `scores` table
+### 2. Apply the database migration
 
-In the Supabase dashboard, open **SQL Editor** → **New query**, paste this, and click **Run**:
+In the Supabase dashboard, open **SQL Editor** → **New query**. Paste the complete
+contents of `supabase/migrations/20260721000000_create_scores.sql` and click **Run**.
 
-```sql
-create table public.scores (
-  id          bigint generated always as identity primary key,
-  emoji       text   not null check (char_length(emoji) between 1 and 8),
-  initials    text   not null check (initials ~ '^[A-Z]{3}$'),
-  score       int    not null check (score between 0 and 9999),
-  created_at  timestamptz default now() not null
-);
-create index scores_score_desc on public.scores (score desc, created_at desc);
+The migration creates the table and leaderboard index, enables Row Level Security,
+and grants anonymous visitors only two abilities: read scores and insert rows whose
+emoji, initials, and score pass the database constraints. Anonymous visitors cannot
+set IDs/timestamps or update/delete existing scores.
 
-alter table public.scores enable row level security;
+### 3. Get your URL + publishable key
 
-create policy "public read" on public.scores
-  for select using (true);
+In the Supabase dashboard, open the project's **Connect** dialog (or **Project Settings → API Keys**).
+Copy the **Project URL** and the browser-safe **Publishable key** (`sb_publishable_...`).
 
-create policy "public insert" on public.scores
-  for insert with check (
-    char_length(initials) = 3
-    and initials ~ '^[A-Z]{3}$'
-    and score between 0 and 9999
-    and char_length(emoji) between 1 and 8
-  );
-```
-
-### 3. Get your URL + anon key
-
-In the Supabase dashboard: **Project Settings → API** (or **API Keys**). Copy the **Project URL** and the **`anon` `public` key**.
-
-> Both are safe to commit publicly. The anon key is meant for browser use — Row Level Security (the policies above) controls what it can actually do (read all scores, insert valid scores, nothing else).
+> The URL and publishable key are safe to include in this static site. Never copy a
+> Secret key or legacy `service_role` key into the browser or repository. RLS—not
+> secrecy of the publishable key—is what protects the table.
 
 ### 4. Paste into `src/config.js`
 
 ```js
-export const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
-export const SUPABASE_ANON_KEY = "eyJhbGc...your-anon-key...";
+export const SUPABASE_URL = SUPABASE_TEST_CONFIG?.supabaseUrl
+  ?? "https://YOUR-PROJECT.supabase.co";
+export const SUPABASE_PUBLISHABLE_KEY = SUPABASE_TEST_CONFIG?.supabasePublishableKey
+  ?? "sb_publishable_...your-key...";
 ```
 
 Reload the page. The leaderboard should now load (and be empty). Play a round, submit a score, and watch yourself appear at the top.
+
+### Security model
+
+This is intentionally a casual public leaderboard with no accounts. Database
+constraints and RLS reject malformed rows and prevent public edits/deletes, but they
+cannot prove a browser-submitted score was earned during real gameplay. If the board
+ever attracts abuse, disable the public insert policy first; rate limiting or a
+server-side submission endpoint can be added later.
 
 ## Deploying to GitHub Pages
 
@@ -100,6 +95,8 @@ snake_jr/
 ├── index.html
 ├── styles.css
 ├── README.md
+├── supabase/
+│   └── migrations/     # tracked database schema + RLS policies
 └── src/
     ├── main.js          # boot + scene routing
     ├── game.js          # game loop & state
@@ -111,7 +108,7 @@ snake_jr/
     ├── skins.js         # skin catalog + unlock logic
     ├── storage.js       # localStorage wrapper
     ├── leaderboard.js   # Supabase REST client
-    └── config.js        # constants, meme text, Supabase keys
+    └── config.js        # constants, meme text, Supabase publishable config
 ```
 
 Plus `tools/` — a dev-only headless E2E smoke check (see below). Not needed to play or deploy.
@@ -130,8 +127,10 @@ npm run e2e
 It starts a local server and plays a real game with deterministic apple placement
 (`Math.random` is stubbed only inside the spawn functions), then asserts exact scores,
 the flat +67 golden apple, combo chaining up to ×5, skin-unlock thresholds, the
-death → submit → leaderboard flow, mute sync, and that the game loop fully stops after
-death. Screenshots land in `tools/screens/`. Run it after any gameplay change.
+death → submit → leaderboard flow, bounded offline retries, Supabase request headers,
+mute sync, and that the game loop fully stops after death. Supabase REST calls are
+mocked, so E2E never reads or writes the live leaderboard. Screenshots land in
+`tools/screens/`. Run it after any gameplay or leaderboard change.
 
 ## Verification checklist
 
@@ -149,4 +148,6 @@ death. Screenshots land in `tools/screens/`. Run it after any gameplay change.
 - [ ] After death, menus are idle — no game loop running in the background (`cd tools && npm run e2e` checks this)
 - [ ] Submitting a score posts to Supabase and appears at the top of the leaderboard
 - [ ] Reloading shows the same global leaderboard (proves global persistence)
+- [ ] Supabase rejects an invalid emoji, initials, or score
+- [ ] Supabase denies anonymous update and delete requests
 - [ ] On iPad Safari: no pinch-zoom or scroll while playing

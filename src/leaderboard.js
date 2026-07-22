@@ -1,37 +1,56 @@
 // Supabase REST client — no SDK, just fetch.
-// Both URL and anon key are public-safe; RLS enforces what the anon role can do.
+// The URL and publishable key identify this public browser app; RLS is the
+// actual authorization boundary.
 
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
+import { EMOJIS, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "./config.js";
 import { storage } from "./storage.js";
 
+const MAX_LEADERBOARD_ROWS = 50;
+
 function configured() {
-  return SUPABASE_URL && SUPABASE_ANON_KEY;
+  return Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY);
 }
 
 function headers(extra = {}) {
   return {
-    "apikey": SUPABASE_ANON_KEY,
-    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+    "apikey": SUPABASE_PUBLISHABLE_KEY,
     "Content-Type": "application/json",
     ...extra,
   };
 }
 
+function normalizeEntry({ emoji, initials, score } = {}) {
+  const normalizedInitials = typeof initials === "string" ? initials.trim().toUpperCase() : "";
+  const normalizedScore = Number(score);
+  if (!EMOJIS.includes(emoji)) return null;
+  if (!/^[A-Z]{3}$/.test(normalizedInitials)) return null;
+  if (!Number.isInteger(normalizedScore) || normalizedScore < 0 || normalizedScore > 9999) return null;
+  return { emoji, initials: normalizedInitials, score: normalizedScore };
+}
+
 export async function fetchTop(limit = 50) {
   if (!configured()) return { ok: false, reason: "not-configured", rows: [] };
-  const url = `${SUPABASE_URL}/rest/v1/scores?select=*&order=score.desc,created_at.desc&limit=${limit}`;
+  const requestedLimit = Number.isFinite(Number(limit)) ? Math.floor(Number(limit)) : MAX_LEADERBOARD_ROWS;
+  const safeLimit = Math.min(MAX_LEADERBOARD_ROWS, Math.max(1, requestedLimit));
+  const params = new URLSearchParams({
+    select: "id,emoji,initials,score,created_at",
+    order: "score.desc,created_at.desc,id.desc",
+    limit: String(safeLimit),
+  });
+  const url = `${SUPABASE_URL}/rest/v1/scores?${params}`;
   try {
     const res = await fetch(url, { headers: headers() });
     if (!res.ok) return { ok: false, reason: `http-${res.status}`, rows: [] };
     const rows = await res.json();
-    return { ok: true, rows };
+    return { ok: true, rows: Array.isArray(rows) ? rows : [] };
   } catch (e) {
     return { ok: false, reason: "network", rows: [] };
   }
 }
 
-export async function submitScore({ emoji, initials, score }) {
-  const entry = { emoji, initials: initials.toUpperCase(), score: Math.floor(score) };
+export async function submitScore(scoreData) {
+  const entry = normalizeEntry(scoreData);
+  if (!entry) return { ok: false, reason: "invalid", queued: false };
   if (!configured()) {
     storage.pushQueue(entry);
     return { ok: false, reason: "not-configured", queued: true };
@@ -67,11 +86,13 @@ export async function flushQueue() {
   const queue = storage.getQueue();
   if (!queue.length) return;
   const remaining = [];
-  for (const entry of queue) {
+  for (const queuedEntry of queue) {
+    const entry = normalizeEntry(queuedEntry);
+    if (!entry) continue;
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/scores`, {
         method: "POST",
-        headers: headers(),
+        headers: headers({ Prefer: "return=minimal" }),
         body: JSON.stringify(entry),
       });
       // Keep only entries worth retrying — drop permanent (4xx) rejections.
@@ -80,10 +101,5 @@ export async function flushQueue() {
       remaining.push(entry);
     }
   }
-  if (remaining.length) {
-    storage.clearQueue();
-    for (const r of remaining) storage.pushQueue(r);
-  } else {
-    storage.clearQueue();
-  }
+  storage.setQueue(remaining);
 }

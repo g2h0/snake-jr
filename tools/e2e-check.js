@@ -22,6 +22,8 @@ const { chromium } = require("playwright");
 const PORT = 8917;
 const ROOT = path.join(__dirname, "..");
 const SCREEN_DIR = path.join(__dirname, "screens");
+const MOCK_SUPABASE_URL = "https://snake-jr-e2e.supabase.co";
+const MOCK_SUPABASE_KEY = "sb_publishable_e2e";
 
 const failures = [];
 function check(label, ok, detail = "") {
@@ -96,10 +98,97 @@ function startStaticServer(root, port) {
     browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 820, height: 1080 } });
     const errors = [];
-    page.on("console", m => { if (m.type() === "error") errors.push(m.text()); });
+    const expectedMockErrors = [];
+    const unexpectedSupabaseRequests = [];
+    page.on("console", m => {
+      if (m.type() !== "error") return;
+      const message = m.text();
+      const location = m.location().url || "";
+      if (message.includes("Failed to load resource") && location.startsWith(MOCK_SUPABASE_URL)) {
+        expectedMockErrors.push(message);
+      } else {
+        errors.push(message);
+      }
+    });
     page.on("pageerror", e => errors.push("PAGEERROR: " + e.message));
+    page.on("request", request => {
+      const url = request.url();
+      if (url.includes(".supabase.co") && !url.startsWith(MOCK_SUPABASE_URL)) {
+        unexpectedSupabaseRequests.push(url);
+      }
+    });
 
-    await page.addInitScript(() => {
+    const mockScores = [];
+    const apiRequests = [];
+    let nextMockScoreId = 1;
+    let failNextInsert = false;
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "apikey, content-type, prefer",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    };
+
+    await page.route(`${MOCK_SUPABASE_URL}/rest/v1/scores**`, async route => {
+      const request = route.request();
+      const method = request.method();
+      if (method === "OPTIONS") {
+        await route.fulfill({ status: 204, headers: corsHeaders });
+        return;
+      }
+
+      const requestRecord = {
+        method,
+        url: request.url(),
+        headers: request.headers(),
+        body: request.postData() ? JSON.parse(request.postData()) : null,
+      };
+      apiRequests.push(requestRecord);
+
+      if (method === "GET") {
+        const url = new URL(request.url());
+        const limit = Number(url.searchParams.get("limit")) || 50;
+        const rows = [...mockScores]
+          .sort((a, b) => b.score - a.score || b.created_at.localeCompare(a.created_at) || b.id - a.id)
+          .slice(0, limit);
+        await route.fulfill({
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify(rows),
+        });
+        return;
+      }
+
+      if (method === "POST") {
+        if (failNextInsert) {
+          failNextInsert = false;
+          await route.fulfill({
+            status: 503,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            body: JSON.stringify({ message: "temporary test failure" }),
+          });
+          return;
+        }
+
+        const row = {
+          id: nextMockScoreId++,
+          ...requestRecord.body,
+          created_at: new Date(Date.UTC(2026, 6, 21, 12, 0, nextMockScoreId)).toISOString(),
+        };
+        mockScores.push(row);
+        const returnRepresentation = requestRecord.headers.prefer?.includes("return=representation");
+        await route.fulfill({
+          status: 201,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          body: returnRepresentation ? JSON.stringify([row]) : "",
+        });
+        return;
+      }
+
+      await route.fulfill({ status: 405, headers: corsHeaders });
+    });
+
+    await page.addInitScript(({ supabaseUrl, supabasePublishableKey }) => {
+      globalThis.__SNAKE_JR_TEST_CONFIG__ = { supabaseUrl, supabasePublishableKey };
       const q = [
         0.755, 0.51,                   // apple1 -> (15,12)
         0.07, 0.51, 0.99,              // after eat1: apple2 -> (1,12), no golden
@@ -116,7 +205,7 @@ function startStaticServer(root, port) {
         return real();
       };
       localStorage.clear(); // fresh personal best so the unlock list is exact
-    });
+    }, { supabaseUrl: MOCK_SUPABASE_URL, supabasePublishableKey: MOCK_SUPABASE_KEY });
 
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForSelector("#btn-play");
@@ -127,6 +216,63 @@ function startStaticServer(root, port) {
       return chip ? chip.textContent.trim() : "MISSING";
     });
     check("Titanoboa locked at 250 on title screen", titanoChip.includes("250"), titanoChip);
+
+    // Exercise the Supabase REST client directly without touching a live project.
+    const initialFetch = await page.evaluate(async () => {
+      const { fetchTop } = await import("./src/leaderboard.js");
+      return fetchTop(999);
+    });
+    check("mock leaderboard starts empty", initialFetch.ok && initialFetch.rows.length === 0);
+    const firstGet = apiRequests.find(r => r.method === "GET");
+    const firstGetUrl = new URL(firstGet?.url || MOCK_SUPABASE_URL);
+    check("leaderboard query requests explicit columns",
+      firstGetUrl.searchParams.get("select") === "id,emoji,initials,score,created_at",
+      firstGetUrl.searchParams.get("select") || "missing");
+    check("leaderboard query caps rows at 50", firstGetUrl.searchParams.get("limit") === "50",
+      firstGetUrl.searchParams.get("limit") || "missing");
+
+    const postCountBeforeInvalid = apiRequests.filter(r => r.method === "POST").length;
+    const invalidResult = await page.evaluate(async () => {
+      const { submitScore } = await import("./src/leaderboard.js");
+      return submitScore({ emoji: "💣", initials: "NO", score: 10000 });
+    });
+    check("invalid scores are rejected before fetch", invalidResult.reason === "invalid" && !invalidResult.queued);
+    check("invalid scores make no API request",
+      apiRequests.filter(r => r.method === "POST").length === postCountBeforeInvalid);
+
+    failNextInsert = true;
+    const queuedResult = await page.evaluate(async () => {
+      const { submitScore } = await import("./src/leaderboard.js");
+      const result = await submitScore({ emoji: "🐢", initials: " qwe ", score: 42 });
+      const queue = JSON.parse(localStorage.getItem("snakejr.queue") || "[]");
+      return { result, queue };
+    });
+    check("temporary server errors queue a normalized score",
+      queuedResult.result.queued && queuedResult.queue.length === 1 && queuedResult.queue[0].initials === "QWE",
+      JSON.stringify(queuedResult));
+    check("simulated server failure was exercised", expectedMockErrors.length === 1,
+      `observed ${expectedMockErrors.length}`);
+
+    await page.evaluate(async () => {
+      const { flushQueue } = await import("./src/leaderboard.js");
+      await flushQueue();
+    });
+    const queueAfterFlush = await page.evaluate(() => JSON.parse(localStorage.getItem("snakejr.queue") || "[]"));
+    check("queued scores flush after recovery", queueAfterFlush.length === 0 && mockScores.some(s => s.initials === "QWE"));
+
+    const queueCap = await page.evaluate(async () => {
+      const { storage } = await import("./src/storage.js");
+      storage.clearQueue();
+      for (let score = 0; score < 25; score++) {
+        storage.pushQueue({ emoji: "🔥", initials: "AAA", score });
+      }
+      const queue = storage.getQueue();
+      storage.clearQueue();
+      return { length: queue.length, first: queue[0]?.score, last: queue.at(-1)?.score };
+    });
+    check("offline score queue is capped at 20",
+      queueCap.length === 20 && queueCap.first === 5 && queueCap.last === 24,
+      JSON.stringify(queueCap));
 
     await page.click("#btn-play");
 
@@ -176,11 +322,22 @@ function startStaticServer(root, port) {
     }));
     check("game loop fully stopped after death (0 rAF in 600ms)", rafCount === 0, `got ${rafCount}`);
 
-    // save score with Supabase unconfigured -> offline queue -> leaderboard
+    // Save to the mocked Supabase API, then render the returned leaderboard.
     await page.click("#btn-submit");
     await page.waitForTimeout(1400);
     const onBoard = await page.$eval("#scene-leaderboard", el => el.classList.contains("active"));
     check("save score lands on the leaderboard scene", onBoard);
+    const highlightedScore = await page.textContent("#board-list .just-me").catch(() => "");
+    check("saved score is highlighted on the leaderboard",
+      highlightedScore.includes("AAA") && highlightedScore.includes("79"), highlightedScore.trim());
+
+    const dataRequests = apiRequests.filter(r => r.method === "GET" || r.method === "POST");
+    check("Supabase requests use the publishable apikey header",
+      dataRequests.length > 0 && dataRequests.every(r => r.headers.apikey === MOCK_SUPABASE_KEY));
+    check("publishable key is never sent as bearer authorization",
+      dataRequests.every(r => !("authorization" in r.headers)));
+    check("E2E never contacts configured production Supabase",
+      unexpectedSupabaseRequests.length === 0, JSON.stringify(unexpectedSupabaseRequests));
 
     // replay: HUD best carries over; in-game mute stays synced with title mute
     await page.click("#btn-replay");
@@ -194,7 +351,7 @@ function startStaticServer(root, port) {
     ]);
     check("mute buttons stay in sync", icons[0] === "🔇" && icons[1] === "🔇", icons.join(" "));
 
-    check("no console errors", errors.length === 0, JSON.stringify(errors));
+    check("no unexpected console errors", errors.length === 0, JSON.stringify(errors));
 
   } finally {
     await browser?.close().catch(() => {});

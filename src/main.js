@@ -375,7 +375,7 @@ async function openLeaderboard({ highlightId } = {}) {
   const result = await fetchTop(50);
   if (!result.ok) {
     if (result.reason === "not-configured") {
-      boardStatus.innerHTML = "Leaderboard isn't connected yet. <br>Set <code>SUPABASE_URL</code> &amp; <code>SUPABASE_ANON_KEY</code> in <code>src/config.js</code> — see README.";
+      boardStatus.innerHTML = "Leaderboard isn't connected yet. <br>Set <code>SUPABASE_URL</code> &amp; <code>SUPABASE_PUBLISHABLE_KEY</code> in <code>src/config.js</code> — see README.";
     } else {
       boardStatus.textContent = "Couldn't load scores. Check your connection.";
     }

@@ -8,6 +8,8 @@ const KEYS = {
   queue: "snakejr.queue",
 };
 
+const MAX_SCORE_QUEUE = 20;
+
 function read(key, fallback) {
   try {
     const v = localStorage.getItem(key);
@@ -31,11 +33,15 @@ export const storage = {
   getSkin()           { return read(KEYS.skin, "default"); },
   setSkin(id)         { write(KEYS.skin, id); },
 
-  getQueue()          { return read(KEYS.queue, []); },
-  pushQueue(entry)    {
-    const q = read(KEYS.queue, []);
-    q.push(entry);
-    write(KEYS.queue, q);
+  getQueue()          {
+    const queue = read(KEYS.queue, []);
+    return Array.isArray(queue) ? queue : [];
   },
+  pushQueue(entry)    {
+    const q = this.getQueue();
+    q.push(entry);
+    write(KEYS.queue, q.slice(-MAX_SCORE_QUEUE));
+  },
+  setQueue(entries)   { write(KEYS.queue, Array.isArray(entries) ? entries.slice(-MAX_SCORE_QUEUE) : []); },
   clearQueue()        { write(KEYS.queue, []); },
 };
