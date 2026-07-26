@@ -21,7 +21,7 @@ function eq(a, b) { return a.x === b.x && a.y === b.y; }
 function opposite(a, b) { return a.x === -b.x && a.y === -b.y; }
 function wrap(v, mod) { return ((v % mod) + mod) % mod; }
 
-export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGolden, getSkin }) {
+export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGolden, getSkin, getWorld }) {
   const renderer = createRenderer(canvas);
   const effects = createEffects();
   const input = createInput(canvas);
@@ -247,12 +247,13 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
 
   function render(now) {
     renderer.clear();
+    const worldId = getWorld?.() || "backyard";
     const shake = effects.getShake();
     const ctx = renderer.ctx;
     ctx.save();
     ctx.translate(shake.dx, shake.dy);
-    renderer.drawFieldBg();
-    if (apple)  renderer.drawApple(apple, now);
+    renderer.drawFieldBg(worldId, now);
+    if (apple)  renderer.drawApple(apple, now, worldId);
     if (golden) renderer.drawGolden(golden, now);
     renderer.drawSnake(snake, getSkin?.() || "default", now);
     effects.drawOverlay(ctx, renderer.getSize().w, renderer.getSize().h);

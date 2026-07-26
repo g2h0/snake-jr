@@ -217,6 +217,76 @@ function startStaticServer(root, port) {
     });
     check("Titanoboa locked at 250 on title screen", titanoChip.includes("250"), titanoChip);
 
+    const initialProgress = (await page.textContent("#title-next-unlock")).trim();
+    check("fresh player sees Candy Land as the next reward",
+      initialProgress.includes("Candy Land") && initialProgress.includes("0 / 10"),
+      initialProgress);
+
+    const dimensionChip = await page.evaluate(() => {
+      const chip = [...document.querySelectorAll(".world-chip")].find(c => c.title === "67 Dimension");
+      return chip ? { text: chip.textContent.trim(), disabled: chip.disabled } : null;
+    });
+    check("67 Dimension is visible and locked at 150",
+      dimensionChip?.disabled && dimensionChip.text.includes("150"),
+      JSON.stringify(dimensionChip));
+
+    const progressionChecks = await page.evaluate(async () => {
+      const { getNextUnlock } = await import("./src/progression.js");
+      const at24 = getNextUnlock(24);
+      return {
+        at24: at24?.at,
+        namesAt24: at24?.items.map(item => item.name),
+        at250: getNextUnlock(250),
+      };
+    });
+    check("score 24 previews both rewards at 25",
+      progressionChecks.at24 === 25 &&
+      progressionChecks.namesAt24.includes("Corn Snake") &&
+      progressionChecks.namesAt24.includes("Jungle"),
+      JSON.stringify(progressionChecks));
+    check("score 250 completes the reward track", progressionChecks.at250 === null);
+
+    const renderedWorlds = await page.evaluate(async () => {
+      const [{ createRenderer }, { WORLD_UNLOCKS }] = await Promise.all([
+        import("./src/renderer.js"),
+        import("./src/worlds.js"),
+      ]);
+      const canvas = document.createElement("canvas");
+      canvas.style.cssText = "position:fixed;left:-1000px;top:0;width:320px;height:480px";
+      document.body.appendChild(canvas);
+      const renderer = createRenderer(canvas);
+      renderer.resize();
+      const colors = [];
+      for (const world of WORLD_UNLOCKS) {
+        renderer.clear();
+        renderer.drawFieldBg(world.id, 1234);
+        renderer.drawApple({ x: 2, y: 2 }, 1234, world.id);
+        colors.push([...renderer.ctx.getImageData(2, 2, 1, 1).data].join(","));
+      }
+      canvas.remove();
+      return { count: colors.length, uniqueBackdrops: new Set(colors).size };
+    });
+    check("all eight worlds render with distinct backdrops",
+      renderedWorlds.count === 8 && renderedWorlds.uniqueBackdrops === 8,
+      JSON.stringify(renderedWorlds));
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const phoneTitleLayout = await page.evaluate(() => {
+      const scene = document.querySelector("#scene-title");
+      const play = document.querySelector("#btn-play").getBoundingClientRect();
+      return {
+        scrollable: scene.scrollHeight > scene.clientHeight,
+        overflowY: getComputedStyle(scene).overflowY,
+        playVisible: play.top >= 0 && play.bottom <= innerHeight,
+      };
+    });
+    check("phone title keeps Play visible and extra rewards scrollable",
+      phoneTitleLayout.playVisible &&
+      (!phoneTitleLayout.scrollable || phoneTitleLayout.overflowY === "auto"),
+      JSON.stringify(phoneTitleLayout));
+    await page.screenshot({ path: path.join(SCREEN_DIR, "phone-title.png") });
+    await page.setViewportSize({ width: 820, height: 1080 });
+
     // Exercise the Supabase REST client directly without touching a live project.
     const initialFetch = await page.evaluate(async () => {
       const { fetchTop } = await import("./src/leaderboard.js");
@@ -310,8 +380,34 @@ function startStaticServer(root, port) {
 
     const unlocks = (await page.textContent("#submit-unlocks")).trim();
     check("79 unlocks up to Green Tree Python", unlocks.includes("Green Tree Python"), unlocks);
+    check("79 unlocks worlds up to Space",
+      /Candy Land/.test(unlocks) && /Space/.test(unlocks) && !/Neon Arcade/.test(unlocks),
+      unlocks);
     check("79 does NOT unlock King Cobra/Rainbow Boa/Titanoboa",
       !/King Cobra|Rainbow Boa|Titanoboa/.test(unlocks), unlocks);
+
+    const nextAfter79 = (await page.textContent("#submit-next-unlock")).trim();
+    check("game over points toward Neon Arcade at 100",
+      nextAfter79.includes("Neon Arcade") && nextAfter79.includes("21 more points") && nextAfter79.includes("79 / 100"),
+      nextAfter79);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const phoneSubmitLayout = await page.evaluate(() => {
+      const scene = document.querySelector("#scene-submit");
+      const panel = document.querySelector("#scene-submit .panel").getBoundingClientRect();
+      return {
+        overflowY: getComputedStyle(scene).overflowY,
+        panelTopReachable: panel.top >= 0,
+        canReachBottom: scene.scrollHeight >= panel.height,
+      };
+    });
+    check("multi-unlock game over remains reachable on phone",
+      phoneSubmitLayout.overflowY === "auto" &&
+      phoneSubmitLayout.panelTopReachable &&
+      phoneSubmitLayout.canReachBottom,
+      JSON.stringify(phoneSubmitLayout));
+    await page.screenshot({ path: path.join(SCREEN_DIR, "phone-submit.png") });
+    await page.setViewportSize({ width: 820, height: 1080 });
 
     // zombie-loop check: no rAF activity while sitting on the submit screen
     const rafCount = await page.evaluate(() => new Promise(res => {
@@ -350,6 +446,25 @@ function startStaticServer(root, port) {
       document.querySelector("#btn-mute").textContent,
     ]);
     check("mute buttons stay in sync", icons[0] === "🔇" && icons[1] === "🔇", icons.join(" "));
+
+    // Newly unlocked worlds can be selected, persist, and reach the renderer.
+    await page.click("#btn-pause");
+    await page.click("#btn-quit");
+    const spaceAvailable = await page.$eval(".world-chip[title='Space']", chip => !chip.disabled);
+    check("Space is selectable after the 79-point run", spaceAvailable);
+    await page.click(".world-chip[title='Space']");
+    const savedWorld = await page.evaluate(() => JSON.parse(localStorage.getItem("snakejr.world")));
+    check("selected world persists on the device", savedWorld === "space", savedWorld);
+    await page.click("#btn-play");
+    await page.waitForTimeout(500);
+    const activeWorld = await page.evaluate(() => ({
+      label: document.querySelector("#hud-world").textContent,
+      canvas: document.querySelector("#game-canvas").dataset.world,
+    }));
+    check("selected world reaches the game renderer",
+      activeWorld.canvas === "space" && activeWorld.label.includes("Space"),
+      JSON.stringify(activeWorld));
+    await page.screenshot({ path: path.join(SCREEN_DIR, "space-world.png") });
 
     check("no unexpected console errors", errors.length === 0, JSON.stringify(errors));
 

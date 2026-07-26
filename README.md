@@ -16,6 +16,8 @@ A fast, colorful snake game made for quick, kid-friendly fun. Swipe to turn, gob
 | ✨ 67 ✨ | Rare golden apple, +67 points. Disappears after 8 seconds. |
 | Combo | Eat the next regular apple quickly to build a combo up to 5× (MAX AURA). Golden apples are always exactly +67. |
 | Milestones | Hit special scores to trigger celebration banners. |
+| Progress | Your personal best fills the meter toward the next snake or world. |
+| Worlds | Unlock and choose new playfield themes as your personal best grows. |
 | Pause / Mute | ⏸ and 🔊 live in the top-right HUD. Auto-pauses if the app is backgrounded. |
 
 ## Unlockable snakes
@@ -33,6 +35,19 @@ Set a new personal best to unlock more skins:
 | 100 | King Cobra |
 | 150 | Rainbow Boa |
 | 250 | Titanoboa |
+
+## Unlockable worlds
+
+| Best score | World |
+|---:|---|
+| 0 | 🌼 Backyard |
+| 10 | 🍭 Candy Land |
+| 25 | 🌴 Jungle |
+| 33 | ❄️ Arctic |
+| 50 | 🌋 Volcano |
+| 67 | 🚀 Space |
+| 100 | 👾 Neon Arcade |
+| 150 | ✨ 67 Dimension |
 
 ## Tips
 

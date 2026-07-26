@@ -8,6 +8,8 @@ import { storage } from "./storage.js";
 import { fetchTop, submitScore, flushQueue } from "./leaderboard.js";
 import { EMOJIS, SKIN_UNLOCKS, TAGLINES, DEATH_HEADINGS } from "./config.js";
 import { unlockedSkins, newlyUnlocked, SKINS } from "./skins.js";
+import { WORLD_UNLOCKS, WORLDS, unlockedWorlds, newlyUnlockedWorlds, getWorld } from "./worlds.js";
+import { getNextUnlock } from "./progression.js";
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -39,14 +41,60 @@ window.addEventListener("pointerdown", kickAudio);
 // --- Title screen wiring ---
 const bestEl       = $("#title-best");
 const skinSelectEl = $("#skin-select");
+const worldSelectEl = $("#world-select");
 const taglineEl    = $("#tagline");
+const titleNextUnlockEl = $("#title-next-unlock");
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+function rewardNames(items) {
+  return items.map(item => `${item.icon} ${item.name}`).join(" + ");
+}
+
+function renderNextUnlock(container, best, { gameOver = false } = {}) {
+  const next = getNextUnlock(best);
+  if (!next) {
+    container.classList.add("complete");
+    container.innerHTML = `
+      <div class="unlock-progress-copy">
+        <span>🏆 Every reward unlocked!</span>
+        <span>MAX</span>
+      </div>
+      <div class="unlock-progress-track" role="progressbar" aria-label="All rewards unlocked" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+        <div class="unlock-progress-fill" style="width: 100%"></div>
+      </div>`;
+    return;
+  }
+
+  container.classList.remove("complete");
+  const close = gameOver && next.pointsLeft <= 3;
+  const label = gameOver
+    ? `${close ? "SO CLOSE! " : ""}${next.pointsLeft} more point${next.pointsLeft === 1 ? "" : "s"} for ${rewardNames(next.items)}`
+    : `Next: ${rewardNames(next.items)}`;
+  const percent = Math.round(next.progress * 100);
+  container.innerHTML = `
+    <div class="unlock-progress-copy">
+      <span>${label}</span>
+      <span>${next.best} / ${next.at}</span>
+    </div>
+    <div class="unlock-progress-track" role="progressbar" aria-label="Progress to ${rewardNames(next.items)}" aria-valuemin="0" aria-valuemax="${next.at}" aria-valuenow="${next.best}">
+      <div class="unlock-progress-fill" style="width: ${percent}%"></div>
+    </div>`;
+}
+
+function selectedWorldId(best = storage.getBest()) {
+  const available = unlockedWorlds(best);
+  const selected = storage.getWorld();
+  if (available.includes(selected)) return selected;
+  storage.setWorld("backyard");
+  return "backyard";
+}
 
 function refreshTitle() {
   const best = storage.getBest();
   bestEl.textContent = best;
   taglineEl.textContent = pick(TAGLINES);
+  renderNextUnlock(titleNextUnlockEl, best);
   // skins
   skinSelectEl.innerHTML = "";
   const unlocked = new Set(unlockedSkins(best));
@@ -71,6 +119,30 @@ function refreshTitle() {
       refreshTitle();
     });
     skinSelectEl.appendChild(btn);
+  }
+  // worlds
+  worldSelectEl.innerHTML = "";
+  const availableWorlds = new Set(unlockedWorlds(best));
+  const currentWorld = selectedWorldId(best);
+  for (const world of WORLD_UNLOCKS) {
+    const btn = document.createElement("button");
+    const isUnlocked = availableWorlds.has(world.id);
+    const theme = WORLDS[world.id];
+    btn.className = "world-chip";
+    btn.classList.toggle("locked", !isUnlocked);
+    btn.classList.toggle("selected", currentWorld === world.id && isUnlocked);
+    btn.disabled = !isUnlocked;
+    btn.style.background = `linear-gradient(145deg, ${theme.field[0]}, ${theme.field[1]})`;
+    btn.title = world.name;
+    btn.innerHTML = `<span class="world-icon">${world.icon}</span><span class="world-name">${world.name}</span>${isUnlocked ? "" : `<span class="world-lock">🔒 ${world.unlockAt}</span>`}`;
+    btn.addEventListener("click", () => {
+      if (!isUnlocked) return;
+      storage.setWorld(world.id);
+      sfx.uiTap();
+      haptics.tap();
+      refreshTitle();
+    });
+    worldSelectEl.appendChild(btn);
   }
 }
 
@@ -105,6 +177,7 @@ $("#btn-mute-game").addEventListener("click", toggleMute);
 const hudScore  = $("#hud-score");
 const hudCombo  = $("#hud-combo");
 const hudBest   = $("#hud-best");
+const hudWorld  = $("#hud-world");
 const bannerEl  = $("#banner");
 const pauseOverlay = $("#pause-overlay");
 
@@ -114,19 +187,24 @@ let lastRunMeta = null;
 function startGame() {
   music.stop();
   const runBest = storage.getBest();
+  const worldId = selectedWorldId(runBest);
+  const world = getWorld(worldId);
   let bestBeaten = false;
   hudBest.textContent = `★ ${runBest}`;
   hudBest.classList.remove("newbest");
   hudScore.textContent = 0;
   hudCombo.textContent = "";
+  hudWorld.textContent = `${world.icon} ${world.name}`;
   clearBanners();
   pauseOverlay.classList.remove("show");
   showScene("game");
   const canvas = $("#game-canvas");
+  canvas.dataset.world = worldId;
   if (gameInstance) gameInstance.destroy();
   gameInstance = createGame({
     canvas,
     getSkin: () => storage.getSkin(),
+    getWorld: () => worldId,
     onScoreChange(score, combo) {
       hudScore.textContent = score;
       hudCombo.textContent = combo > 1 ? `×${combo} 🔥` : "";
@@ -146,7 +224,13 @@ function startGame() {
       showBanner("SIX SEVENNN!", "gold");
     },
     onDeath({ score, prevBest, newBest }) {
-      lastRunMeta = { score, prevBest, newBest, unlocks: newlyUnlocked(prevBest, newBest) };
+      lastRunMeta = {
+        score,
+        prevBest,
+        newBest,
+        skinUnlocks: newlyUnlocked(prevBest, newBest),
+        worldUnlocks: newlyUnlockedWorlds(prevBest, newBest),
+      };
       // Let the death shake/confetti play out, then tear the game down so the
       // rAF loop and input listeners don't keep running behind the menus.
       setTimeout(() => {
@@ -233,6 +317,7 @@ const initialsEls = [$("#init-0"), $("#init-1"), $("#init-2")];
 const submitFinalScore = $("#submit-final-score");
 const submitUnlocks    = $("#submit-unlocks");
 const submitStatus     = $("#submit-status");
+const submitNextUnlock = $("#submit-next-unlock");
 
 let selectedEmoji = "🔥";
 let selectedInitials = ["A","A","A"];
@@ -318,10 +403,20 @@ function openSubmit() {
   }, 0);
   renderInitials();
   submitFinalScore.textContent = lastRunMeta.score;
-  const unlocks = lastRunMeta.unlocks || [];
-  if (unlocks.length) {
-    submitUnlocks.innerHTML = `🎉 New skin${unlocks.length > 1 ? "s" : ""} unlocked: ` +
-      unlocks.map(id => `<b>${SKINS[id].name}</b>`).join(", ");
+  const skinUnlocks = (lastRunMeta.skinUnlocks || []).map(id => ({
+    icon: "🐍",
+    name: SKINS[id].name,
+    kind: "skin",
+  }));
+  const worldUnlocks = (lastRunMeta.worldUnlocks || []).map(id => ({
+    icon: WORLDS[id].icon,
+    name: WORLDS[id].name,
+    kind: "world",
+  }));
+  const rewards = [...skinUnlocks, ...worldUnlocks];
+  if (rewards.length) {
+    submitUnlocks.innerHTML = "🎉 New rewards: " +
+      rewards.map(reward => `${reward.icon} <b>${reward.name}</b> ${reward.kind}`).join(", ");
     submitUnlocks.classList.add("show");
   } else {
     submitUnlocks.classList.remove("show");
@@ -332,6 +427,7 @@ function openSubmit() {
   } else {
     submitStatus.textContent = "";
   }
+  renderNextUnlock(submitNextUnlock, lastRunMeta.newBest, { gameOver: true });
   showScene("submit");
   music.start();
 }

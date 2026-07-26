@@ -1,10 +1,11 @@
-// localStorage wrapper: personal best, unlocked skins, last initials/emoji, score queue
+// localStorage wrapper: personal best, cosmetics, last initials/emoji, score queue
 
 const KEYS = {
   best: "snakejr.best",
   emoji: "snakejr.emoji",
   initials: "snakejr.initials",
   skin: "snakejr.skin",
+  world: "snakejr.world",
   queue: "snakejr.queue",
 };
 
@@ -32,6 +33,8 @@ export const storage = {
   setInitials(s)      { write(KEYS.initials, s); },
   getSkin()           { return read(KEYS.skin, "default"); },
   setSkin(id)         { write(KEYS.skin, id); },
+  getWorld()          { return read(KEYS.world, "backyard"); },
+  setWorld(id)        { write(KEYS.world, id); },
 
   getQueue()          {
     const queue = read(KEYS.queue, []);

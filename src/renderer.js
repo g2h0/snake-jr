@@ -3,6 +3,7 @@
 
 import { GRID } from "./config.js";
 import { getSkin } from "./skins.js";
+import { getWorld } from "./worlds.js";
 
 export function createRenderer(canvas) {
   const ctx = canvas.getContext("2d");
@@ -34,19 +35,24 @@ export function createRenderer(canvas) {
     ctx.clearRect(0, 0, widthPx, heightPx);
   }
 
-  function drawFieldBg() {
-    // Subtle grid + glowing border
+  function drawFieldBg(worldId, t) {
+    const world = getWorld(worldId);
+    drawWorldBackdrop(ctx, world, widthPx, heightPx, t);
+
+    // Themed grid + glowing border
     const x = offsetX, y = offsetY;
     const w = GRID.cols * cellPx;
     const h = GRID.rows * cellPx;
     // play area background
     const grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, "rgba(40, 22, 100, 0.45)");
-    grad.addColorStop(1, "rgba(15, 8, 50, 0.55)");
+    grad.addColorStop(0, world.field[0]);
+    grad.addColorStop(1, world.field[1]);
     ctx.fillStyle = grad;
+    ctx.globalAlpha = 0.9;
     roundRect(ctx, x, y, w, h, 18); ctx.fill();
+    ctx.globalAlpha = 1;
     // grid lines (very subtle)
-    ctx.strokeStyle = "rgba(138, 75, 255, 0.10)";
+    ctx.strokeStyle = world.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = 1; i < GRID.cols; i++) {
@@ -58,17 +64,20 @@ export function createRenderer(canvas) {
       ctx.lineTo(x + w, y + j * cellPx + 0.5);
     }
     ctx.stroke();
-    // Neon border
+    // World-color border
     ctx.save();
-    ctx.shadowColor = "#ff3bd4";
+    ctx.shadowColor = world.border;
     ctx.shadowBlur = 18;
-    ctx.strokeStyle = "rgba(255, 59, 212, 0.65)";
+    ctx.strokeStyle = world.border;
+    ctx.globalAlpha = 0.78;
     ctx.lineWidth = 2;
     roundRect(ctx, x, y, w, h, 18); ctx.stroke();
     ctx.restore();
   }
 
-  function drawApple(cell, t) {
+  function drawApple(cell, t, worldId) {
+    const world = getWorld(worldId);
+    const [highlight, middle, dark, leaf] = world.apple;
     const { x, y } = cellToPx(cell.x, cell.y);
     const r = cellPx * 0.42;
     const cx = x + cellPx / 2;
@@ -78,19 +87,19 @@ export function createRenderer(canvas) {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.scale(s, s);
-    ctx.shadowColor = "#ff3060";
+    ctx.shadowColor = middle;
     ctx.shadowBlur = 14;
     const g = ctx.createRadialGradient(-r/3, -r/3, 2, 0, 0, r);
-    g.addColorStop(0, "#ffd7e0");
-    g.addColorStop(0.5, "#ff5070");
-    g.addColorStop(1, "#a01030");
+    g.addColorStop(0, highlight);
+    g.addColorStop(0.5, middle);
+    g.addColorStop(1, dark);
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
     // leaf
     ctx.shadowBlur = 0;
-    ctx.fillStyle = "#5be084";
+    ctx.fillStyle = leaf;
     ctx.beginPath();
     ctx.ellipse(r * 0.2, -r * 0.95, r * 0.28, r * 0.12, -0.6, 0, Math.PI * 2);
     ctx.fill();
@@ -213,6 +222,148 @@ export function createRenderer(canvas) {
     getOrigin,
     getSize,
   };
+}
+
+function seeded(index, salt = 0) {
+  const value = Math.sin((index + 1) * (12.9898 + salt * 7.233)) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function drawWorldBackdrop(ctx, world, width, height, t = 0) {
+  const sky = ctx.createLinearGradient(0, 0, 0, height);
+  sky.addColorStop(0, world.sky[0]);
+  sky.addColorStop(1, world.sky[1]);
+  ctx.fillStyle = sky;
+  ctx.fillRect(-30, -30, width + 60, height + 60);
+
+  ctx.save();
+  switch (world.decor) {
+    case "fireflies":
+      for (let i = 0; i < 26; i++) {
+        const x = seeded(i, 1) * width;
+        const y = seeded(i, 2) * height;
+        const pulse = 0.35 + (Math.sin(t / 420 + i) + 1) * 0.25;
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = i % 3 === 0 ? "#fff58a" : "#7dff9b";
+        ctx.beginPath();
+        ctx.arc(x, y, 1.5 + seeded(i, 3) * 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+
+    case "candy":
+      ctx.lineWidth = 4;
+      for (let i = 0; i < 18; i++) {
+        const x = seeded(i, 4) * width;
+        const y = seeded(i, 5) * height;
+        const radius = 7 + seeded(i, 6) * 18;
+        ctx.globalAlpha = 0.18;
+        ctx.strokeStyle = i % 2 ? "#75f4ff" : "#ff9ee8";
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x - radius * 1.55, y);
+        ctx.lineTo(x + radius * 1.55, y);
+        ctx.stroke();
+      }
+      break;
+
+    case "leaves":
+      for (let i = 0; i < 24; i++) {
+        const x = seeded(i, 7) * width;
+        const y = seeded(i, 8) * height;
+        const angle = seeded(i, 9) * Math.PI;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = i % 3 === 0 ? "#f6db55" : "#77f05a";
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 5, 15, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      break;
+
+    case "snow":
+      for (let i = 0; i < 44; i++) {
+        const x = seeded(i, 10) * width;
+        const speed = 0.012 + seeded(i, 11) * 0.02;
+        const y = (seeded(i, 12) * height + t * speed) % Math.max(1, height);
+        ctx.globalAlpha = 0.25 + seeded(i, 13) * 0.5;
+        ctx.fillStyle = "#eaffff";
+        ctx.beginPath();
+        ctx.arc(x, y, 1 + seeded(i, 14) * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+
+    case "embers":
+      for (let i = 0; i < 36; i++) {
+        const x = seeded(i, 15) * width;
+        const speed = 0.018 + seeded(i, 16) * 0.026;
+        const y = height - ((seeded(i, 17) * height + t * speed) % Math.max(1, height));
+        ctx.globalAlpha = 0.25 + seeded(i, 18) * 0.55;
+        ctx.fillStyle = i % 3 ? "#ff6738" : "#ffd058";
+        ctx.beginPath();
+        ctx.arc(x, y, 1 + seeded(i, 19) * 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+
+    case "stars":
+      for (let i = 0; i < 60; i++) {
+        const x = seeded(i, 20) * width;
+        const y = seeded(i, 21) * height;
+        const twinkle = 0.25 + (Math.sin(t / 350 + i * 1.7) + 1) * 0.3;
+        ctx.globalAlpha = twinkle;
+        ctx.fillStyle = i % 7 === 0 ? "#bf66ff" : "#f4f1ff";
+        ctx.beginPath();
+        ctx.arc(x, y, 0.8 + seeded(i, 22) * 2.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+
+    case "arcade": {
+      const horizon = height * 0.36;
+      ctx.globalAlpha = 0.2;
+      ctx.strokeStyle = "#36f1ff";
+      ctx.lineWidth = 1;
+      for (let i = -8; i <= 8; i++) {
+        ctx.beginPath();
+        ctx.moveTo(width / 2, horizon);
+        ctx.lineTo(width / 2 + i * width / 7, height + 20);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = "#ff3bd4";
+      for (let y = horizon; y < height + 30; y += Math.max(18, (y - horizon) * 0.18 + 18)) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      break;
+    }
+
+    case "sixtyseven":
+      ctx.font = "900 54px 'Lilita One', system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (let i = 0; i < 18; i++) {
+        const x = seeded(i, 23) * width;
+        const y = seeded(i, 24) * height;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate((seeded(i, 25) - 0.5) * 0.7);
+        ctx.globalAlpha = 0.1 + (Math.sin(t / 500 + i) + 1) * 0.035;
+        ctx.fillStyle = i % 2 ? "#ffe066" : "#36f1ff";
+        ctx.fillText("67", 0, 0);
+        ctx.restore();
+      }
+      break;
+  }
+  ctx.restore();
 }
 
 function roundRect(ctx, x, y, w, h, r) {

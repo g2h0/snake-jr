@@ -24,6 +24,7 @@
       <h1 class="logo">SNAKE<span class="jr">JR.</span></h1>
       <div class="tagline" id="tagline">Easy to slither. Hard to GOAT.</div>
       <div class="best-pill">★ Best: <span id="title-best">0</span></div>
+      <div id="title-next-unlock" class="unlock-progress-card"></div>
       <div class="title-actions">
         <button id="btn-play" class="bubble-btn pink">▶ Play</button>
         <button id="btn-board" class="bubble-btn cyan">🏆 Top Scores</button>
@@ -31,6 +32,10 @@
       <div class="skin-select-wrap">
         <h3>Snake Skin</h3>
         <div id="skin-select"></div>
+      </div>
+      <div class="world-select-wrap">
+        <h3>World</h3>
+        <div id="world-select"></div>
       </div>
       <div class="meme-strip">Eat the <span>✨ 67 ✨</span> apple</div>
     </section>
@@ -46,6 +51,7 @@
           <button id="btn-pause" class="icon-btn hud-pause" aria-label="Pause">⏸</button>
         </div>
       </div>
+      <div class="hud-world" id="hud-world">🌼 Backyard</div>
       <canvas id="game-canvas"></canvas>
       <div id="banner" data-color="cyan"></div>
       <div id="pause-overlay" class="pause-overlay">
@@ -65,6 +71,7 @@
         <div class="score-big" id="submit-final-score">0</div>
         <div class="status-line" id="submit-status"></div>
         <div class="unlocks-line" id="submit-unlocks"></div>
+        <div id="submit-next-unlock" class="unlock-progress-card submit-progress"></div>
 
         <div class="field-label">Pick your vibe</div>
         <div id="emoji-row"></div>
