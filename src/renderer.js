@@ -180,10 +180,11 @@ export function createRenderer(canvas) {
   // Reused every frame so a 60fps loop allocates nothing per segment.
   const cellX = [];
   const cellY = [];
-  const pointPool = [];
-  const runPoints = [];
+  const pointPool = [];               // every run's pixel points, back to back
+  const runRanges = [];               // flat quads: offset, count, idxFirst, idxLast
+  const runPoints = [];               // windowed view into pointPool for one run
   const lookPx = { x: 0, y: 0 };
-  const bodyOpts = { width: 0, t: 0, u0: 0, u1: 1, index0: 0, indexStep: -1 };
+  const bodyOpts = { width: 0, t: 0, u0: 0, u1: 1, index0: 0, indexStep: -1, glow: 0 };
 
   // opts: { prevBody, alpha, anim, look } — prevBody/alpha come from the tick
   // interpolation in game.js, anim is a createSnakeAnim() the renderer only reads.
@@ -220,37 +221,67 @@ export function createRenderer(canvas) {
     roundRect(ctx, offsetX, offsetY, GRID.cols * cellPx, GRID.rows * cellPx, 18);
     ctx.clip();
 
-    let headAngle = 0;
+    // Lay out the runs first. A run covers body indices runStart..i (head end ..
+    // tail end); where a wrap cut it we carry one unrolled neighbour past the
+    // wall so both halves run into the edge instead of stopping a cell short.
+    // The clip trims the rest.
+    let used = 0;
+    let runs = 0;
     let runStart = 0;
     for (let i = 0; i < n; i++) {
       if (i < last && !splitAfter(i)) continue;
-      // Run covers body indices runStart..i (head end .. tail end). Where a wrap
-      // cut it we carry one unrolled neighbour past the wall, so both halves run
-      // into the edge instead of stopping a cell short. The clip trims the rest.
-      const idxFirst = i < last ? i + 1 : i;
-      const idxLast  = runStart > 0 ? runStart - 1 : runStart;
-      let k = 0;
+      const offset = used;
       if (i < last) {
-        k = pushPoint(k, unwrap(cellX[i + 1], cellX[i], GRID.cols),
-                         unwrap(cellY[i + 1], cellY[i], GRID.rows));
+        used = poolPoint(used, unwrap(cellX[i + 1], cellX[i], GRID.cols),
+                               unwrap(cellY[i + 1], cellY[i], GRID.rows));
       }
-      for (let j = i; j >= runStart; j--) k = pushPoint(k, cellX[j], cellY[j]);
+      for (let j = i; j >= runStart; j--) used = poolPoint(used, cellX[j], cellY[j]);
       if (runStart > 0) {
-        k = pushPoint(k, unwrap(cellX[runStart - 1], cellX[runStart], GRID.cols),
-                         unwrap(cellY[runStart - 1], cellY[runStart], GRID.rows));
+        used = poolPoint(used, unwrap(cellX[runStart - 1], cellX[runStart], GRID.cols),
+                               unwrap(cellY[runStart - 1], cellY[runStart], GRID.rows));
       }
-      runPoints.length = k;
-      bodyOpts.width = bodyW;
-      bodyOpts.t = t;
-      bodyOpts.u0 = 1 - idxFirst / span;
-      bodyOpts.u1 = 1 - idxLast / span;
-      bodyOpts.index0 = idxFirst;
-      drawSnakeBodyPath(ctx, runPoints, skin, bodyOpts);
-      if (runStart === 0 && k >= 2) {
-        headAngle = Math.atan2(runPoints[k - 1].y - runPoints[k - 2].y,
-                               runPoints[k - 1].x - runPoints[k - 2].x);
-      }
+      runRanges[runs * 4]     = offset;
+      runRanges[runs * 4 + 1] = used - offset;
+      runRanges[runs * 4 + 2] = i < last ? i + 1 : i;
+      runRanges[runs * 4 + 3] = runStart > 0 ? runStart - 1 : runStart;
+      runs++;
       runStart = i + 1;
+    }
+
+    // Glow: every run batched into one path so a wrapping snake still costs the
+    // frame exactly one shadowBlur.
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    for (let r = 0; r < runs; r++) {
+      traceBody(ctx, runView(r), runRanges[r * 4 + 1]);
+    }
+    ctx.globalAlpha = 0.18;
+    ctx.strokeStyle = skin.glow;
+    ctx.shadowColor = skin.glow;
+    ctx.shadowBlur = bodyW * 0.9;
+    ctx.lineWidth = bodyW * 1.25;
+    ctx.stroke();
+    ctx.restore();
+
+    bodyOpts.width = bodyW;
+    bodyOpts.t = t;
+    for (let r = 0; r < runs; r++) {
+      const count = runRanges[r * 4 + 1];
+      const idxFirst = runRanges[r * 4 + 2];
+      bodyOpts.u0 = 1 - idxFirst / span;
+      bodyOpts.u1 = 1 - runRanges[r * 4 + 3] / span;
+      bodyOpts.index0 = idxFirst;
+      drawSnakeBodyPath(ctx, runView(r), skin, bodyOpts);
+    }
+
+    // The head always sits in run 0, ending at its last point.
+    let headAngle = 0;
+    if (runs && runRanges[1] >= 2) {
+      const end = runRanges[0] + runRanges[1] - 1;
+      headAngle = Math.atan2(pointPool[end].y - pointPool[end - 1].y,
+                             pointPool[end].x - pointPool[end - 1].x);
     }
 
     let look = null;
@@ -278,13 +309,21 @@ export function createRenderer(canvas) {
     return Math.abs(cellX[i] - cellX[i + 1]) > 1.5 || Math.abs(cellY[i] - cellY[i + 1]) > 1.5;
   }
 
-  function pushPoint(k, cx, cy) {
+  function poolPoint(k, cx, cy) {
     let p = pointPool[k];
     if (!p) { p = { x: 0, y: 0 }; pointPool[k] = p; }
     p.x = offsetX + (cx + 0.5) * cellPx;
     p.y = offsetY + (cy + 0.5) * cellPx;
-    runPoints[k] = p;
     return k + 1;
+  }
+
+  // Re-point runPoints at run r's slice of the pool — no copying, no allocation.
+  function runView(r) {
+    const offset = runRanges[r * 4];
+    const count = runRanges[r * 4 + 1];
+    for (let j = 0; j < count; j++) runPoints[j] = pointPool[offset + j];
+    runPoints.length = count;
+    return runPoints;
   }
 
   function getCellPx() { return cellPx; }
@@ -348,9 +387,14 @@ function rainbowAt(index, t) {
 }
 
 // Smooth polyline: corners are rounded by curving through each point with the
-// segment midpoints as anchors, so a right-angle turn reads as an arc.
+// segment midpoints as anchors, so a right-angle turn reads as an arc. Adds a
+// sub-path to whatever is open, so several runs can share one path.
 function traceBody(ctx, points, n) {
-  ctx.beginPath();
+  if (n === 1) {
+    ctx.moveTo(points[0].x, points[0].y);
+    ctx.lineTo(points[0].x + 0.01, points[0].y);
+    return;
+  }
   ctx.moveTo(points[0].x, points[0].y);
   ctx.lineTo((points[0].x + points[1].x) / 2, (points[0].y + points[1].y) / 2);
   for (let i = 1; i < n - 1; i++) {
@@ -399,8 +443,10 @@ export function drawSnakeBodyPath(ctx, points, skin, opts = {}) {
     return;
   }
 
-  // 1) one soft glow stroke — the only shadowBlur the snake costs
+  // 1) one soft glow stroke — the only shadowBlur the snake costs. drawSnake
+  //    passes glow: 0 and batches every run's glow into a single blurred stroke.
   if (glow > 0) {
+    ctx.beginPath();
     traceBody(ctx, points, n);
     ctx.globalAlpha = glow;
     ctx.strokeStyle = skin.glow;
@@ -440,6 +486,7 @@ export function drawSnakeBodyPath(ctx, points, skin, opts = {}) {
   // 3) thin chrome highlight, nudged up-left so the tube looks lit from above
   if (opts.highlight !== false) {
     ctx.translate(-width * 0.1, -width * 0.14);
+    ctx.beginPath();
     traceBody(ctx, points, n);
     ctx.lineWidth = width * 0.22;
     ctx.strokeStyle = "rgba(255,255,255,0.3)";
