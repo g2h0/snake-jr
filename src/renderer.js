@@ -87,21 +87,39 @@ export function createRenderer(canvas) {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.scale(s, s);
+
+    // stem + leaf go down first so they tuck into the dimple
+    ctx.strokeStyle = "#a06a34";
+    ctx.lineWidth = Math.max(1.4, r * 0.18);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 0.6);
+    ctx.quadraticCurveTo(r * 0.04, -r * 0.95, r * 0.18, -r * 1.08);
+    ctx.stroke();
+    ctx.fillStyle = leaf;
+    ctx.beginPath();
+    ctx.ellipse(r * 0.46, -r * 1.0, r * 0.34, r * 0.15, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Two overlapping lobes union into the classic apple silhouette — the gap
+    // between their tops is the dimple the stem sits in.
     ctx.shadowColor = middle;
     ctx.shadowBlur = 14;
-    const g = ctx.createRadialGradient(-r/3, -r/3, 2, 0, 0, r);
+    const g = ctx.createRadialGradient(-r * 0.36, -r * 0.4, r * 0.05, 0, 0, r * 1.3);
     g.addColorStop(0, highlight);
     g.addColorStop(0.5, middle);
     g.addColorStop(1, dark);
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.ellipse(-r * 0.4, r * 0.05, r * 0.72, r * 0.9, 0, 0, Math.PI * 2);
+    ctx.ellipse( r * 0.4, r * 0.05, r * 0.72, r * 0.9, 0, 0, Math.PI * 2);
     ctx.fill();
-    // leaf
+
+    // shine
     ctx.shadowBlur = 0;
-    ctx.fillStyle = leaf;
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
     ctx.beginPath();
-    ctx.ellipse(r * 0.2, -r * 0.95, r * 0.28, r * 0.12, -0.6, 0, Math.PI * 2);
+    ctx.ellipse(-r * 0.46, -r * 0.34, r * 0.26, r * 0.13, -0.6, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -136,73 +154,137 @@ export function createRenderer(canvas) {
     ctx.ellipse(-r * 0.35, -r * 0.4, r * 0.25, r * 0.12, -0.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+    // orbiting sparkles
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const a = t / 520 + (i * Math.PI * 2) / 3;
+      const orbit = r * (1.45 + Math.sin(t / 300 + i) * 0.12);
+      ctx.globalAlpha = 0.4 + (Math.sin(t / 210 + i * 2) + 1) * 0.28;
+      ctx.fillStyle = i === 1 ? "#ffffff" : "#ffe066";
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * orbit, cy + Math.sin(a) * orbit * 0.72, r * 0.11, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
     // floating "67" label
     ctx.save();
-    ctx.font = "900 14px 'Lilita One', system-ui, sans-serif";
+    const labelPx = Math.max(9, Math.round(cellPx * 0.55));
+    ctx.font = `900 ${labelPx}px 'Lilita One', system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#0a0820";
-    ctx.fillText("67", cx, cy + 1);
+    ctx.fillText("67", cx, cy + labelPx * 0.07);
     ctx.restore();
   }
 
-  function drawSnake(snake, skinId, t) {
+  // Reused every frame so a 60fps loop allocates nothing per segment.
+  const cellX = [];
+  const cellY = [];
+  const pointPool = [];
+  const runPoints = [];
+  const lookPx = { x: 0, y: 0 };
+  const bodyOpts = { width: 0, t: 0, u0: 0, u1: 1, index0: 0, indexStep: -1 };
+
+  // opts: { prevBody, alpha, anim, look } — prevBody/alpha come from the tick
+  // interpolation in game.js, anim is a createSnakeAnim() the renderer only reads.
+  function drawSnake(snake, skinId, t, opts = {}) {
+    const body = snake.body;
+    const n = body.length;
+    if (!n || !cellPx) return;
     const skin = getSkin(skinId);
-    const r = cellPx * 0.48;
-    // body back-to-front so head sits on top
-    for (let i = snake.body.length - 1; i >= 0; i--) {
-      const seg = snake.body[i];
-      const { x, y } = cellToPx(seg.x, seg.y);
-      const cx = x + cellPx / 2;
-      const cy = y + cellPx / 2;
-      const isHead = i === 0;
-      ctx.save();
-      ctx.shadowColor = skin.glow;
-      ctx.shadowBlur = isHead ? 18 : 10;
-      let fill;
-      if (skin.body === null) {
-        // Rainbow Boa: hue rotates per segment + over time
-        const hue = (i * 22 + t / 16) % 360;
-        fill = `hsl(${hue} 100% 65%)`;
-      } else {
-        const stops = isHead ? skin.head : skin.body;
-        const g = ctx.createRadialGradient(cx - r/3, cy - r/3, 1, cx, cy, r);
-        g.addColorStop(0, stops[0]);
-        g.addColorStop(1, stops[1]);
-        fill = g;
-      }
-      ctx.fillStyle = fill;
-      const segR = isHead ? r : r * (0.95 - i * 0.005);
-      ctx.beginPath();
-      ctx.arc(cx, cy, Math.max(segR, r * 0.5), 0, Math.PI * 2);
-      ctx.fill();
-      // chrome highlight
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "rgba(255,255,255,0.35)";
-      ctx.beginPath();
-      ctx.ellipse(cx - r * 0.3, cy - r * 0.35, r * 0.4, r * 0.18, -0.5, 0, Math.PI * 2);
-      ctx.fill();
-      if (isHead) {
-        // Eyes
-        const dx = snake.dir.x;
-        const dy = snake.dir.y;
-        const eyeOffX = dx * r * 0.25;
-        const eyeOffY = dy * r * 0.25;
-        const perpX = -dy * r * 0.35;
-        const perpY =  dx * r * 0.35;
-        const eR = r * 0.18;
-        const pR = r * 0.09;
-        // eye whites
-        ctx.fillStyle = "#fff";
-        ctx.beginPath(); ctx.arc(cx + eyeOffX + perpX, cy + eyeOffY + perpY, eR, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(cx + eyeOffX - perpX, cy + eyeOffY - perpY, eR, 0, Math.PI * 2); ctx.fill();
-        // pupils (look forward)
-        ctx.fillStyle = "#0a0820";
-        ctx.beginPath(); ctx.arc(cx + eyeOffX * 1.5 + perpX, cy + eyeOffY * 1.5 + perpY, pR, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(cx + eyeOffX * 1.5 - perpX, cy + eyeOffY * 1.5 - perpY, pR, 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.restore();
+    const prev = opts.prevBody && opts.prevBody.length ? opts.prevBody : body;
+    const alpha = opts.alpha ?? 1;
+    const anim = opts.anim || null;
+
+    // Interpolated cell-space centers, index-aligned with body (0 = head). A hop
+    // longer than one cell means the segment wrapped, so its previous position is
+    // unrolled past the wall and the lerp travels out through the edge.
+    for (let i = 0; i < n; i++) {
+      const c = body[i];
+      const p = prev[Math.min(i, prev.length - 1)];
+      let px = p.x;
+      let py = p.y;
+      if (c.x - px > 1) px += GRID.cols;
+      else if (c.x - px < -1) px -= GRID.cols;
+      if (c.y - py > 1) py += GRID.rows;
+      else if (c.y - py < -1) py -= GRID.rows;
+      cellX[i] = px + (c.x - px) * alpha;
+      cellY[i] = py + (c.y - py) * alpha;
     }
+
+    const bodyW = cellPx * 0.8;
+    const last = n - 1;
+    const span = Math.max(1, last);
+
+    ctx.save();
+    roundRect(ctx, offsetX, offsetY, GRID.cols * cellPx, GRID.rows * cellPx, 18);
+    ctx.clip();
+
+    let headAngle = 0;
+    let runStart = 0;
+    for (let i = 0; i < n; i++) {
+      if (i < last && !splitAfter(i)) continue;
+      // Run covers body indices runStart..i (head end .. tail end). Where a wrap
+      // cut it we carry one unrolled neighbour past the wall, so both halves run
+      // into the edge instead of stopping a cell short. The clip trims the rest.
+      const idxFirst = i < last ? i + 1 : i;
+      const idxLast  = runStart > 0 ? runStart - 1 : runStart;
+      let k = 0;
+      if (i < last) {
+        k = pushPoint(k, unwrap(cellX[i + 1], cellX[i], GRID.cols),
+                         unwrap(cellY[i + 1], cellY[i], GRID.rows));
+      }
+      for (let j = i; j >= runStart; j--) k = pushPoint(k, cellX[j], cellY[j]);
+      if (runStart > 0) {
+        k = pushPoint(k, unwrap(cellX[runStart - 1], cellX[runStart], GRID.cols),
+                         unwrap(cellY[runStart - 1], cellY[runStart], GRID.rows));
+      }
+      runPoints.length = k;
+      bodyOpts.width = bodyW;
+      bodyOpts.t = t;
+      bodyOpts.u0 = 1 - idxFirst / span;
+      bodyOpts.u1 = 1 - idxLast / span;
+      bodyOpts.index0 = idxFirst;
+      drawSnakeBodyPath(ctx, runPoints, skin, bodyOpts);
+      if (runStart === 0 && k >= 2) {
+        headAngle = Math.atan2(runPoints[k - 1].y - runPoints[k - 2].y,
+                               runPoints[k - 1].x - runPoints[k - 2].x);
+      }
+      runStart = i + 1;
+    }
+
+    let look = null;
+    if (opts.look) {
+      lookPx.x = offsetX + (opts.look.x + 0.5) * cellPx;
+      lookPx.y = offsetY + (opts.look.y + 0.5) * cellPx;
+      look = lookPx;
+    }
+    const headR = bodyW * 0.625; // head is 1.25x body width so the face reads small
+    drawSnakeHead(ctx,
+      offsetX + (cellX[0] + 0.5) * cellPx,
+      offsetY + (cellY[0] + 0.5) * cellPx,
+      headAngle, headR, skin, anim, look, t);
+    if (n > 1 && splitAfter(0)) {
+      // Mid-wrap: the same head is still leaning out of the opposite wall.
+      drawSnakeHead(ctx,
+        offsetX + (unwrap(cellX[0], cellX[1], GRID.cols) + 0.5) * cellPx,
+        offsetY + (unwrap(cellY[0], cellY[1], GRID.rows) + 0.5) * cellPx,
+        headAngle, headR, skin, anim, look, t);
+    }
+    ctx.restore();
+  }
+
+  function splitAfter(i) {
+    return Math.abs(cellX[i] - cellX[i + 1]) > 1.5 || Math.abs(cellY[i] - cellY[i + 1]) > 1.5;
+  }
+
+  function pushPoint(k, cx, cy) {
+    let p = pointPool[k];
+    if (!p) { p = { x: 0, y: 0 }; pointPool[k] = p; }
+    p.x = offsetX + (cx + 0.5) * cellPx;
+    p.y = offsetY + (cy + 0.5) * cellPx;
+    runPoints[k] = p;
+    return k + 1;
   }
 
   function getCellPx() { return cellPx; }
@@ -222,6 +304,301 @@ export function createRenderer(canvas) {
     getOrigin,
     getSize,
   };
+}
+
+// Pick the copy of `v` that sits next to `anchor` on a wrapping axis.
+function unwrap(v, anchor, mod) {
+  const d = v - anchor;
+  if (d > mod / 2) return v - mod;
+  if (d < -mod / 2) return v + mod;
+  return v;
+}
+
+function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+const RAMP_STEPS = 16;
+const rampCache = new Map();
+
+function parseHex(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+// Colour ramp down the body: bright near the head, deep at the tail. Cached per
+// skin so the per-frame stroke loop only indexes into ready-made strings.
+function bodyRamp(lightHex, darkHex) {
+  const key = lightHex + darkHex;
+  let ramp = rampCache.get(key);
+  if (ramp) return ramp;
+  const [lr, lg, lb] = parseHex(lightHex);
+  const [dr, dg, db] = parseHex(darkHex);
+  ramp = new Array(RAMP_STEPS);
+  for (let i = 0; i < RAMP_STEPS; i++) {
+    const m = 0.16 + 0.66 * (i / (RAMP_STEPS - 1));
+    ramp[i] = `rgb(${Math.round(dr + (lr - dr) * m)},${Math.round(dg + (lg - dg) * m)},${Math.round(db + (lb - db) * m)})`;
+  }
+  rampCache.set(key, ramp);
+  return ramp;
+}
+
+// Rainbow Boa: hue rotates per segment and over time.
+function rainbowAt(index, t) {
+  const hue = (((index * 22 + t / 16) % 360) + 360) % 360;
+  return `hsl(${hue} 100% 65%)`;
+}
+
+// Smooth polyline: corners are rounded by curving through each point with the
+// segment midpoints as anchors, so a right-angle turn reads as an arc.
+function traceBody(ctx, points, n) {
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  ctx.lineTo((points[0].x + points[1].x) / 2, (points[0].y + points[1].y) / 2);
+  for (let i = 1; i < n - 1; i++) {
+    const p = points[i];
+    const q = points[i + 1];
+    ctx.quadraticCurveTo(p.x, p.y, (p.x + q.x) / 2, (p.y + q.y) / 2);
+  }
+  ctx.lineTo(points[n - 1].x, points[n - 1].y);
+}
+
+// Draw a connected snake body through precomputed pixel `points`, ordered
+// tail -> head. Three full-path passes (glow, body, highlight) instead of one
+// blurred blob per segment — an old iPad can only afford one shadowBlur.
+// opts:
+//   width      full body width in px at the head end
+//   taper      width multiplier at the tail end (default 0.5)
+//   u0, u1     body fraction at points[0] / points[n-1] (0 = tail tip, 1 = neck)
+//   t          milliseconds, for the Rainbow Boa hue cycle
+//   index0     body segment index of points[0], and indexStep per point (hue)
+//   glow       alpha of the glow pass, 0 to skip it
+//   highlight  draw the chrome spine highlight (default true)
+export function drawSnakeBodyPath(ctx, points, skin, opts = {}) {
+  const n = points.length;
+  if (!n) return;
+  const width = opts.width ?? 10;
+  const t = opts.t ?? 0;
+  const taper = opts.taper ?? 0.5;
+  const u0 = opts.u0 ?? 0;
+  const u1 = opts.u1 ?? 1;
+  const glow = opts.glow ?? 0.18;
+  const index0 = opts.index0 ?? 0;
+  const indexStep = opts.indexStep ?? 1;
+  const rainbow = skin.body === null;
+  const ramp = rainbow ? null : bodyRamp(skin.body[0], skin.body[1]);
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (n === 1) {
+    ctx.fillStyle = rainbow ? rainbowAt(index0, t) : ramp[RAMP_STEPS - 1];
+    ctx.beginPath();
+    ctx.arc(points[0].x, points[0].y, width / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  // 1) one soft glow stroke — the only shadowBlur the snake costs
+  if (glow > 0) {
+    traceBody(ctx, points, n);
+    ctx.globalAlpha = glow;
+    ctx.strokeStyle = skin.glow;
+    ctx.shadowColor = skin.glow;
+    ctx.shadowBlur = width * 0.9;
+    ctx.lineWidth = width * 1.25;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+
+  // 2) the body, as short round-capped pieces so width and colour can change
+  //    along the length; the round caps hide the joins between them
+  for (let j = 0; j < n; j++) {
+    const u = clamp01(u0 + (u1 - u0) * (j / (n - 1)));
+    ctx.beginPath();
+    if (j === 0) {
+      ctx.moveTo(points[0].x, points[0].y);
+      ctx.lineTo((points[0].x + points[1].x) / 2, (points[0].y + points[1].y) / 2);
+    } else if (j === n - 1) {
+      ctx.moveTo((points[n - 2].x + points[n - 1].x) / 2, (points[n - 2].y + points[n - 1].y) / 2);
+      ctx.lineTo(points[n - 1].x, points[n - 1].y);
+    } else {
+      const p = points[j];
+      const a = points[j - 1];
+      const b = points[j + 1];
+      ctx.moveTo((a.x + p.x) / 2, (a.y + p.y) / 2);
+      ctx.quadraticCurveTo(p.x, p.y, (p.x + b.x) / 2, (p.y + b.y) / 2);
+    }
+    ctx.lineWidth = width * (taper + (1 - taper) * u);
+    ctx.strokeStyle = rainbow
+      ? rainbowAt(index0 + indexStep * j, t)
+      : ramp[Math.round(u * (RAMP_STEPS - 1))];
+    ctx.stroke();
+  }
+
+  // 3) thin chrome highlight, nudged up-left so the tube looks lit from above
+  if (opts.highlight !== false) {
+    ctx.translate(-width * 0.1, -width * 0.14);
+    traceBody(ctx, points, n);
+    ctx.lineWidth = width * 0.22;
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// Cartoon head: an oriented ellipse with big eyes, a mood mouth and a flicking
+// tongue. `r` is the head radius across the heading; `anim` is read-only.
+function drawSnakeHead(ctx, x, y, angle, r, skin, anim, look, t) {
+  const mood   = anim ? anim.getMood() : "idle";
+  const blink  = anim ? anim.getBlink() : 0;
+  const tongue = anim ? anim.getTongue() : 0;
+  const squash = anim ? anim.getSquash() : 0;
+  const clock  = anim ? anim.getTime() : t;
+  const dizzy  = mood === "dizzy";
+
+  const rot = angle + (dizzy ? Math.sin(clock / 95) * 0.22 : 0);
+  const hrx = r * 1.3; // snout length — leaves room for a mouth in front of the eyes
+  const hry = r;
+
+  // where to point the pupils, in head-local axes
+  let lookAlong = 0;
+  let lookAcross = 0;
+  if (look) {
+    const dx = look.x - x;
+    const dy = look.y - y;
+    const d = Math.hypot(dx, dy);
+    if (d > 0.001) {
+      const ca = Math.cos(rot);
+      const sa = Math.sin(rot);
+      lookAlong  = (ca * dx + sa * dy) / d;
+      lookAcross = (-sa * dx + ca * dy) / d;
+    }
+  }
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.scale(1 - squash * 0.2, 1 + squash * 0.18); // bite squash
+
+  // tongue first so its root disappears under the head
+  if (tongue > 0.02 && !dizzy) {
+    const tip = hrx * (0.85 + tongue * 0.9);
+    const fork = tip - hrx * 0.34 * tongue;
+    ctx.strokeStyle = "#ff3b6b";
+    ctx.lineWidth = Math.max(1, hrx * 0.14);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(hrx * 0.3, 0);
+    ctx.lineTo(fork, 0);
+    ctx.moveTo(fork, 0);
+    ctx.lineTo(tip, -hry * 0.3 * tongue);
+    ctx.moveTo(fork, 0);
+    ctx.lineTo(tip, hry * 0.3 * tongue);
+    ctx.stroke();
+  }
+
+  const g = ctx.createRadialGradient(-hrx * 0.1, -hry * 0.4, hrx * 0.06, 0, 0, hrx * 1.15);
+  g.addColorStop(0, skin.head[0]);
+  g.addColorStop(1, skin.head[1]);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, hrx, hry, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.26)";
+  ctx.beginPath();
+  ctx.ellipse(-hrx * 0.5, -hry * 0.4, hrx * 0.22, hry * 0.13, -0.35, 0, Math.PI * 2);
+  ctx.fill();
+
+  // mouth
+  if (mood === "chomp") {
+    ctx.fillStyle = "#4a0f22";
+    ctx.beginPath();
+    ctx.moveTo(hrx * 0.12, 0);
+    ctx.arc(0, 0, hrx * 0.86, -0.55, 0.55);
+    ctx.closePath();
+    ctx.fill();
+  } else if (dizzy) {
+    ctx.fillStyle = "#4a0f22";
+    ctx.beginPath();
+    ctx.ellipse(hrx * 0.6, 0, hrx * 0.16, hry * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    const happy = mood === "happy";
+    ctx.strokeStyle = "#2a0a2e";
+    ctx.lineWidth = Math.max(1.2, hry * (happy ? 0.16 : 0.12));
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(hrx * 0.2, 0, hrx * 0.4, happy ? -1.05 : -0.7, happy ? 1.05 : 0.7);
+    ctx.stroke();
+  }
+
+  if (mood === "happy") {
+    ctx.fillStyle = "rgba(255,120,170,0.45)";
+    for (let s = -1; s <= 1; s += 2) {
+      ctx.beginPath();
+      ctx.ellipse(-hrx * 0.55, hry * 0.55 * s, hrx * 0.14, hry * 0.14, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // eyes
+  const open = 1 - blink;
+  const eR = hry * 0.42;
+  const eAlong = -hrx * 0.1;
+  const eAcross = hry * 0.46;
+  for (let s = -1; s <= 1; s += 2) {
+    const ey = eAcross * s;
+    if (dizzy) {
+      ctx.strokeStyle = "#0a0820";
+      ctx.lineWidth = Math.max(1, eR * 0.3);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(eAlong - eR * 0.6, ey - eR * 0.6);
+      ctx.lineTo(eAlong + eR * 0.6, ey + eR * 0.6);
+      ctx.moveTo(eAlong + eR * 0.6, ey - eR * 0.6);
+      ctx.lineTo(eAlong - eR * 0.6, ey + eR * 0.6);
+      ctx.stroke();
+      continue;
+    }
+    if (open > 0.12) {
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "rgba(10,8,32,0.5)";
+      ctx.lineWidth = Math.max(0.8, eR * 0.15);
+      ctx.beginPath();
+      ctx.ellipse(eAlong, ey, eR, eR * open, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    if (open > 0.35) {
+      const pR = eR * 0.5;
+      const pupilX = eAlong + lookAlong * eR * 0.34;
+      const pupilY = ey + lookAcross * eR * 0.34;
+      ctx.fillStyle = "#0a0820";
+      ctx.beginPath();
+      ctx.ellipse(pupilX, pupilY, pR, pR * open, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.beginPath();
+      ctx.arc(pupilX - pR * 0.3, pupilY - pR * 0.35, pR * 0.33, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (open < 0.5) {
+      // lid folding in toward the middle of the head
+      ctx.strokeStyle = "#0a0820";
+      ctx.lineWidth = Math.max(1, eR * 0.2);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(eAlong - eR * 0.85, ey);
+      ctx.quadraticCurveTo(eAlong, ey - s * eR * 0.5 * (1 - open), eAlong + eR * 0.85, ey);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
 }
 
 function seeded(index, salt = 0) {
