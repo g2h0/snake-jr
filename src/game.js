@@ -6,6 +6,7 @@ import { GRID, TICK, SCORE, MILESTONES } from "./config.js";
 import { createRenderer } from "./renderer.js";
 import { createInput } from "./input.js";
 import { createEffects } from "./effects.js";
+import { createSnakeAnim } from "./snakeAnim.js";
 import { sfx } from "./audio.js";
 import { haptics } from "./haptics.js";
 import { storage } from "./storage.js";
@@ -25,8 +26,12 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
   const renderer = createRenderer(canvas);
   const effects = createEffects();
   const input = createInput(canvas);
+  const anim = createSnakeAnim();
+  // Reused each frame so rendering allocates nothing per frame.
+  const snakeOpts = { prevBody: null, alpha: 1, anim, look: null };
 
   let snake, dir, queuedDirs, apple, golden, score, tickMs, lastApplePos;
+  let prevBody = [];   // where each segment sat last tick, for render interpolation
   let alive = false;
   let paused = false;
   let lastTickAt = 0;
@@ -49,6 +54,9 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
       ],
       dir: DIRS.right,
     };
+    // Cells are never mutated in place, so a shallow copy is a safe snapshot.
+    prevBody = snake.body.slice();
+    anim.reset();
     dir = DIRS.right;
     queuedDirs = [];
     score = 0;
@@ -111,6 +119,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
 
   function step(now) {
     if (!alive) return;
+    prevBody = snake.body.slice();
     // commit queued direction
     if (queuedDirs.length) {
       dir = queuedDirs.shift();
@@ -165,6 +174,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
       score += points;
 
       // visuals + audio
+      anim.onEat();
       const { x: px, y: py } = renderer.cellToPx(next.x, next.y);
       const cellPx = renderer.getCellPx();
       if (isGolden) {
@@ -219,6 +229,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
 
   function die() {
     alive = false;
+    anim.onDeath();
     haptics.death();
     sfx.death();
     effects.shake(14, 450);
@@ -241,6 +252,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     }
 
     effects.update(dt);
+    anim.update(dt);
     render(now);
     rafId = requestAnimationFrame(frame);
   }
@@ -255,7 +267,12 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     renderer.drawFieldBg(worldId, now);
     if (apple)  renderer.drawApple(apple, now, worldId);
     if (golden) renderer.drawGolden(golden, now);
-    renderer.drawSnake(snake, getSkin?.() || "default", now);
+    // Render-only interpolation: the snake glides between ticks while the
+    // grid-stepped logic above stays exactly as it was.
+    snakeOpts.prevBody = prevBody;
+    snakeOpts.alpha = alive ? Math.min(1, (now - lastTickAt) / tickMs) : 1;
+    snakeOpts.look = golden || apple || null;
+    renderer.drawSnake(snake, getSkin?.() || "default", now, snakeOpts);
     effects.drawOverlay(ctx, renderer.getSize().w, renderer.getSize().h);
     ctx.restore();
   }
@@ -287,7 +304,9 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     resume() {
       if (!alive || !paused) return;
       paused = false;
-      // Reset timing so the snake doesn't fast-forward over the paused gap.
+      // Reset timing so the snake doesn't fast-forward over the paused gap, and
+      // resync prevBody so the restarted lerp doesn't yank it back a cell first.
+      prevBody = snake.body.slice();
       lastTickAt = performance.now();
       lastFrame = 0;
       cancelAnimationFrame(rafId);
