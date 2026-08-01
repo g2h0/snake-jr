@@ -395,7 +395,20 @@ body::before {
   flex-direction: row;
   align-items: stretch;
   justify-content: stretch;
+  /* main.js stamps data-world here; the blocks below hand the HUD the same
+     border colour the canvas paints around the playfield. Each world carries
+     an -rgb twin so shadows and tints can vary the alpha. */
+  --world-accent: var(--neon-cyan);
+  --world-accent-rgb: 54, 241, 255;
 }
+#scene-game[data-world="backyard"]  { --world-accent: #8dff8b; --world-accent-rgb: 141, 255, 139; }
+#scene-game[data-world="candy"]     { --world-accent: #ff9ee8; --world-accent-rgb: 255, 158, 232; }
+#scene-game[data-world="jungle"]    { --world-accent: #77f05a; --world-accent-rgb: 119, 240, 90; }
+#scene-game[data-world="arctic"]    { --world-accent: #d8fbff; --world-accent-rgb: 216, 251, 255; }
+#scene-game[data-world="volcano"]   { --world-accent: #ff6738; --world-accent-rgb: 255, 103, 56; }
+#scene-game[data-world="space"]     { --world-accent: #7f9cff; --world-accent-rgb: 127, 156, 255; }
+#scene-game[data-world="arcade"]    { --world-accent: #36f1ff; --world-accent-rgb: 54, 241, 255; }
+#scene-game[data-world="dimension"] { --world-accent: #ffe066; --world-accent-rgb: 255, 224, 102; }
 /* The playfield gets a plain, faster fade — a sliding canvas reads as lag. */
 #scene-game.active { display: block; animation: sceneFade 160ms ease both; }
 @keyframes sceneFade {
@@ -420,7 +433,8 @@ body::before {
   padding: 6px 16px;
   border-radius: 999px;
   font-size: 22px;
-  box-shadow: 0 4px 0 #3a2b80, 0 8px 16px rgba(122, 75, 255, 0.4);
+  box-shadow: 0 4px 0 #3a2b80, 0 8px 16px rgba(var(--world-accent-rgb), 0.42);
+  transition: box-shadow 260ms ease;
 }
 .hud-pill.small { font-size: 14px; padding: 4px 10px; }
 .hud-pill.newbest {
@@ -450,15 +464,19 @@ body::before {
   z-index: 3;
   transform: translateX(-50%);
   padding: 4px 12px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid rgba(var(--world-accent-rgb), 0.55);
   border-radius: 999px;
   background: rgba(7, 7, 28, 0.48);
-  color: rgba(255,255,255,0.82);
+  color: rgba(255,255,255,0.9);
   font-family: var(--font-display);
   font-size: 13px;
   letter-spacing: 0.05em;
   pointer-events: none;
   backdrop-filter: blur(5px);
+  box-shadow: 0 0 14px rgba(var(--world-accent-rgb), 0.3),
+              inset 0 0 12px rgba(var(--world-accent-rgb), 0.12);
+  text-shadow: 0 0 9px rgba(var(--world-accent-rgb), 0.6);
+  transition: border-color 260ms ease, box-shadow 260ms ease, text-shadow 260ms ease;
 }
 
 #game-canvas {

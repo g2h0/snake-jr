@@ -443,6 +443,7 @@ function startGame() {
   showScene("game");
   const canvas = $("#game-canvas");
   canvas.dataset.world = worldId;
+  scenes.game.dataset.world = worldId; // the HUD picks its accent off this in CSS
   if (gameInstance) gameInstance.destroy();
   gameInstance = createGame({
     canvas,
