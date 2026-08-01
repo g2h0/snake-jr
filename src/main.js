@@ -10,6 +10,7 @@ import { EMOJIS, SKIN_UNLOCKS, TAGLINES, DEATH_HEADINGS } from "./config.js";
 import { unlockedSkins, newlyUnlocked, SKINS } from "./skins.js";
 import { WORLD_UNLOCKS, WORLDS, unlockedWorlds, newlyUnlockedWorlds, getWorld } from "./worlds.js";
 import { getNextUnlock } from "./progression.js";
+import { REDUCED } from "./motion.js";
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -475,6 +476,59 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// Each reward gets its own card so a ten-unlock run reads as a row of prizes
+// instead of a run-on sentence. Names stay in textContent (the E2E suite reads
+// them straight off #submit-unlocks) and the "🎉 New rewards:" label is kept.
+const REWARD_STAGGER_MS = 55;
+
+function renderRewardCards(rewards) {
+  clearSparkles();
+  submitUnlocks.innerHTML = "";
+  const label = document.createElement("span");
+  label.className = "unlocks-label";
+  label.textContent = "🎉 New rewards:";
+  submitUnlocks.appendChild(label);
+  rewards.forEach((reward, i) => {
+    const card = document.createElement("span");
+    card.className = "reward-card";
+    card.style.animationDelay = `${i * REWARD_STAGGER_MS}ms`;
+    for (const [cls, value] of [["reward-icon", reward.icon], ["reward-name", reward.name], ["reward-kind", reward.kind]]) {
+      const span = document.createElement("span");
+      span.className = cls;
+      span.textContent = value;
+      card.appendChild(span);
+    }
+    submitUnlocks.appendChild(card);
+  });
+}
+
+// The game canvas is long gone by the time this screen appears, so the burst is
+// plain DOM. The sparkles carry no text, so they never pollute textContent.
+const SPARKLE_COUNT = 12;
+const SPARKLE_LIFE_MS = 1100;
+let sparkleTimer = null;
+
+function clearSparkles() {
+  clearTimeout(sparkleTimer);
+  sparkleTimer = null;
+  submitUnlocks.querySelectorAll(".reward-spark").forEach(el => el.remove());
+}
+
+function sparkleBurst(container) {
+  if (REDUCED) return;
+  for (let i = 0; i < SPARKLE_COUNT; i++) {
+    const spark = document.createElement("span");
+    spark.className = "reward-spark";
+    const angle = (i / SPARKLE_COUNT) * Math.PI * 2 + Math.random() * 0.4;
+    const dist = 50 + Math.random() * 60;
+    spark.style.setProperty("--dx", `${Math.round(Math.cos(angle) * dist)}px`);
+    spark.style.setProperty("--dy", `${Math.round(Math.sin(angle) * dist * 0.7)}px`);
+    spark.style.animationDelay = `${Math.round(Math.random() * 160)}ms`;
+    container.appendChild(spark);
+  }
+  sparkleTimer = setTimeout(clearSparkles, SPARKLE_LIFE_MS);
+}
+
 function openSubmit() {
   if (!lastRunMeta) return;
   $("#submit-heading").textContent = pick(DEATH_HEADINGS);
@@ -500,11 +554,14 @@ function openSubmit() {
   }));
   const rewards = [...skinUnlocks, ...worldUnlocks];
   if (rewards.length) {
-    submitUnlocks.innerHTML = "🎉 New rewards: " +
-      rewards.map(reward => `${reward.icon} <b>${reward.name}</b> ${reward.kind}`).join(", ");
+    renderRewardCards(rewards);
     submitUnlocks.classList.add("show");
+    sfx.fanfare();
+    haptics.milestone();
+    sparkleBurst(submitUnlocks);
   } else {
     submitUnlocks.classList.remove("show");
+    clearSparkles();
     submitUnlocks.innerHTML = "";
   }
   if (lastRunMeta.newBest > lastRunMeta.prevBest) {

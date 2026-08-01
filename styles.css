@@ -605,11 +605,65 @@ body::before {
 }
 .unlocks-line {
   display: none;
+  position: relative; /* anchors the sparkle burst */
   text-align: center;
   color: var(--neon-cyan);
   margin-top: 6px;
 }
 .unlocks-line.show { display: block; }
+.unlocks-label {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  color: var(--neon-gold);
+}
+.reward-card {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 4px 3px;
+  padding: 7px 13px;
+  border: 1px solid rgba(255, 224, 102, 0.55);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 224, 102, 0.24), rgba(255, 59, 212, 0.14));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 0 18px rgba(255, 224, 102, 0.4);
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: #fff;
+  animation: rewardPop 260ms cubic-bezier(.2,.9,.3,1.5) both;
+}
+.reward-card .reward-icon { font-size: 17px; }
+.reward-card .reward-name { color: var(--neon-gold); }
+.reward-card .reward-kind {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
+}
+@keyframes rewardPop {
+  from { opacity: 0; transform: scale(0.55) translateY(10px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+/* Sparkles are absolutely positioned and text-free: no layout, no textContent. */
+.reward-spark {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 25%, var(--neon-gold) 70%, rgba(255,224,102,0));
+  pointer-events: none;
+  animation: rewardSpark 720ms ease-out both;
+}
+@keyframes rewardSpark {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.3); }
+  18%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.85); }
+}
 .submit-progress {
   width: 100%;
   margin-top: 12px;
@@ -862,6 +916,8 @@ body::before {
   .scene.active { animation: sceneFade 240ms ease both; }
   .letter-key { transition: none; }
   .letter-key:active { transform: none; }
+  /* Rewards still arrive one by one — they just fade in place. */
+  .reward-card { animation: sceneFade 260ms ease both; }
 }
 @keyframes bannerFade {
   0%   { opacity: 0; transform: translate(-50%, -50%) scale(1); }

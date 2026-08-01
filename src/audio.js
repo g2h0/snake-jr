@@ -85,6 +85,13 @@ export const sfx = {
     sweep({ from: 523, to: 1319, duration: 0.26, type: "triangle", gain: 0.85 });
     setTimeout(() => blip({ freq: 1047, duration: 0.18, type: "square", gain: 0.5 }), 90);
   },
+  // Unlock celebration: an ascending arpeggio capped by a rising shimmer.
+  // Every note goes through blip/sweep, so muting mid-fanfare cuts the rest.
+  fanfare()      {
+    const notes = [523, 659, 784, 1047, 1319]; // C E G C E
+    notes.forEach((f, i) => setTimeout(() => blip({ freq: f, duration: 0.18, type: "triangle", attack: 0.006, decay: 0.17, gain: 0.6 }), i * 105));
+    setTimeout(() => sweep({ from: 784, to: 2093, duration: 0.45, type: "triangle", gain: 0.45 }), 540);
+  },
   uiTap()        { blip({ freq: 880, duration: 0.05, type: "sine", gain: 0.4 }); },
 };
 
