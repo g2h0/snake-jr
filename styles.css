@@ -460,6 +460,39 @@ body::before {
 #banner[data-color="violet"] { color: var(--neon-violet); }
 #banner[data-color="gold"]   { color: var(--neon-gold); }
 
+/* ===== Start countdown ===== */
+#countdown {
+  position: absolute;
+  top: 44%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-display);
+  font-size: clamp(96px, 30vw, 260px);
+  line-height: 1;
+  color: var(--neon-cyan);
+  text-shadow: 0 8px 0 #0b4a5c, 0 0 46px rgba(54, 241, 255, 0.75);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 5;
+}
+#countdown[data-step="go"] {
+  color: var(--neon-gold);
+  font-size: clamp(72px, 22vw, 200px);
+  text-shadow: 0 8px 0 #7a5a00, 0 0 50px rgba(255, 224, 102, 0.8);
+}
+/* One beat is 700ms; hold the number legible for most of it, then drop it. */
+#countdown.show {
+  animation: countPop 680ms cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes countPop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(1.9); }
+  16%  { opacity: 1; transform: translate(-50%, -50%) scale(0.92); }
+  30%  { transform: translate(-50%, -50%) scale(1.06); }
+  55%  { transform: translate(-50%, -50%) scale(1); }
+  85%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.88); }
+}
+
 /* Pause button lives inside the HUD, which is click-through by default. */
 .hud-pause {
   pointer-events: auto;

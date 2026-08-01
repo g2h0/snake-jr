@@ -179,10 +179,79 @@ const hudCombo  = $("#hud-combo");
 const hudBest   = $("#hud-best");
 const hudWorld  = $("#hud-world");
 const bannerEl  = $("#banner");
+const countdownEl = $("#countdown");
 const pauseOverlay = $("#pause-overlay");
 
 let gameInstance = null;
 let lastRunMeta = null;
+
+// --- Start countdown ---
+// Beats fire off setTimeout while game.js holds the snake still for COUNTDOWN_MS.
+// Every exit from the game scene must call clearCountdown(), or a stray "GO!"
+// lands on the title screen.
+const COUNTDOWN_STEPS = [
+  { at: 0,    text: "3",   step: "n" },
+  { at: 700,  text: "2",   step: "n" },
+  { at: 1400, text: "1",   step: "n" },
+  { at: 2100, text: "GO!", step: "go" },
+];
+const COUNTDOWN_MS = 2100;   // the snake starts moving on "GO!"
+const COUNTDOWN_END = 2800;  // "GO!" has finished fading by here
+
+const countdownTimers = [];
+let countdownStartedAt = 0;
+let countdownElapsed = -1; // >=0 only while paused mid-countdown
+
+function showCountdownStep(s) {
+  countdownEl.textContent = s.text;
+  countdownEl.dataset.step = s.step;
+  countdownEl.classList.remove("show");
+  void countdownEl.offsetWidth; // force reflow so the animation restarts
+  countdownEl.classList.add("show");
+  if (s.step === "go") { sfx.go(); haptics.tap(); }
+  else sfx.count();
+}
+
+function scheduleCountdown(fromMs) {
+  for (const s of COUNTDOWN_STEPS) {
+    if (s.at < fromMs) continue;
+    countdownTimers.push(setTimeout(() => showCountdownStep(s), s.at - fromMs));
+  }
+  countdownTimers.push(setTimeout(() => {
+    countdownEl.classList.remove("show");
+    countdownEl.textContent = "";
+  }, COUNTDOWN_END - fromMs));
+}
+
+function startCountdown() {
+  clearCountdown();
+  countdownStartedAt = performance.now();
+  countdownElapsed = -1;
+  scheduleCountdown(0);
+}
+
+function clearCountdown() {
+  countdownTimers.forEach(clearTimeout);
+  countdownTimers.length = 0;
+  countdownElapsed = -1;
+  countdownEl.classList.remove("show");
+  countdownEl.textContent = "";
+}
+
+function pauseCountdown() {
+  const elapsed = performance.now() - countdownStartedAt;
+  if (!countdownTimers.length || elapsed >= COUNTDOWN_END) { clearCountdown(); return; }
+  countdownTimers.forEach(clearTimeout);
+  countdownTimers.length = 0;
+  countdownElapsed = elapsed;
+}
+
+function resumeCountdown() {
+  if (countdownElapsed < 0) return;
+  countdownStartedAt = performance.now() - countdownElapsed;
+  scheduleCountdown(countdownElapsed);
+  countdownElapsed = -1;
+}
 
 function startGame() {
   music.stop();
@@ -196,6 +265,7 @@ function startGame() {
   hudCombo.textContent = "";
   hudWorld.textContent = `${world.icon} ${world.name}`;
   clearBanners();
+  clearCountdown();
   pauseOverlay.classList.remove("show");
   showScene("game");
   const canvas = $("#game-canvas");
@@ -224,6 +294,7 @@ function startGame() {
       showBanner("SIX SEVENNN!", "gold");
     },
     onDeath({ score, prevBest, newBest }) {
+      clearCountdown();
       lastRunMeta = {
         score,
         prevBest,
@@ -240,7 +311,8 @@ function startGame() {
       }, 1100);
     },
   });
-  gameInstance.start();
+  gameInstance.start({ delayMs: COUNTDOWN_MS });
+  startCountdown();
 }
 
 // Banners queue up so back-to-back celebrations play one after another
@@ -279,6 +351,7 @@ function clearBanners() {
 function pauseGame() {
   if (!gameInstance || !gameInstance.isAlive() || gameInstance.isPaused()) return;
   gameInstance.pause();
+  pauseCountdown();
   pauseOverlay.classList.add("show");
   sfx.uiTap();
   haptics.tap();
@@ -288,6 +361,7 @@ function resumeGame() {
   if (!gameInstance || !gameInstance.isPaused()) return;
   pauseOverlay.classList.remove("show");
   gameInstance.resume();
+  resumeCountdown();
   sfx.uiTap();
   haptics.tap();
 }
@@ -295,6 +369,7 @@ function resumeGame() {
 function quitToMenu() {
   pauseOverlay.classList.remove("show");
   clearBanners();
+  clearCountdown();
   if (gameInstance) { gameInstance.stop(); gameInstance.destroy(); gameInstance = null; }
   sfx.uiTap();
   haptics.tap();

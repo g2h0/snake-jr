@@ -79,6 +79,12 @@ export const sfx = {
     notes.forEach((f, i) => setTimeout(() => blip({ freq: f, duration: 0.15, type: "triangle", gain: 0.7 }), i * 90));
   },
   death()        { sweep({ from: 440, to: 60, duration: 0.5, type: "sawtooth", gain: 0.7 }); },
+  // 3… 2… 1… — a flat woodblock tick, then the launch note on GO!
+  count()        { blip({ freq: 392, duration: 0.14, type: "triangle", attack: 0.004, decay: 0.13, gain: 0.55 }); },
+  go()           {
+    sweep({ from: 523, to: 1319, duration: 0.26, type: "triangle", gain: 0.85 });
+    setTimeout(() => blip({ freq: 1047, duration: 0.18, type: "square", gain: 0.5 }), 90);
+  },
   uiTap()        { blip({ freq: 880, duration: 0.05, type: "sine", gain: 0.4 }); },
 };
 

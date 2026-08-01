@@ -35,6 +35,8 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
   let prevBody = [];   // where each segment sat last tick, for render interpolation
   let alive = false;
   let paused = false;
+  let runStartsAt = 0; // ticks are held until this timestamp (the 3-2-1-GO gate)
+  let pausedAt = 0;
   let lastTickAt = 0;
   let lastEatAt = 0;
   let combo = 0;
@@ -250,7 +252,10 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     const dt = now - lastFrame;
     lastFrame = now;
 
-    if (alive && now - lastTickAt >= tickMs) {
+    // Before runStartsAt the snake just sits there idling and blinking — the
+    // countdown owns the screen. lastTickAt is parked on runStartsAt so the
+    // first tick lands one full beat after "GO!".
+    if (alive && now >= runStartsAt && now - lastTickAt >= tickMs) {
       lastTickAt = now;
       step(now);
     }
@@ -274,7 +279,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     // Render-only interpolation: the snake glides between ticks while the
     // grid-stepped logic above stays exactly as it was.
     snakeOpts.prevBody = prevBody;
-    snakeOpts.alpha = alive ? Math.min(1, (now - lastTickAt) / tickMs) : 1;
+    snakeOpts.alpha = alive ? Math.max(0, Math.min(1, (now - lastTickAt) / tickMs)) : 1;
     snakeOpts.look = golden || apple || null;
     renderer.drawSnake(snake, getSkin?.() || "default", now, snakeOpts);
     effects.drawOverlay(ctx, renderer.getSize().w, renderer.getSize().h);
@@ -285,11 +290,14 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
   input.onDirection(applyDirection);
 
   return {
-    start() {
+    // delayMs holds the snake still while main.js runs the 3-2-1-GO! countdown.
+    // The run is `alive` throughout, so pause and quit work during it.
+    start({ delayMs = 0 } = {}) {
       renderer.resize();
       window.addEventListener("resize", onResize);
       initState();
-      lastTickAt = performance.now();
+      runStartsAt = performance.now() + Math.max(0, delayMs);
+      lastTickAt = runStartsAt;
       lastFrame = 0;
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(frame);
@@ -303,15 +311,23 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     pause() {
       if (!alive || paused) return;
       paused = true;
+      pausedAt = performance.now();
       cancelAnimationFrame(rafId);
     },
     resume() {
       if (!alive || !paused) return;
       paused = false;
+      const now = performance.now();
       // Reset timing so the snake doesn't fast-forward over the paused gap, and
       // resync prevBody so the restarted lerp doesn't yank it back a cell first.
       prevBody = snake.body.slice();
-      lastTickAt = performance.now();
+      if (runStartsAt > pausedAt) {
+        // Paused mid-countdown: carry whatever was left of it forward.
+        runStartsAt = now + (runStartsAt - pausedAt);
+        lastTickAt = runStartsAt;
+      } else {
+        lastTickAt = now;
+      }
       lastFrame = 0;
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(frame);
