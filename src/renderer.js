@@ -532,8 +532,10 @@ export function drawSnakeBodyPath(ctx, points, skin, opts = {}) {
 }
 
 // Cartoon head: an oriented ellipse with big eyes, a mood mouth and a flicking
-// tongue. `r` is the head radius across the heading; `anim` is read-only.
-function drawSnakeHead(ctx, x, y, angle, r, skin, anim, look, t, flash = 0, drain = 0) {
+// tongue. `r` is the head radius across the heading; `anim` is read-only (pass
+// null for a plain idle face). Exported so the title mascot and the skin-chip
+// previews draw the same face as the playfield.
+export function drawSnakeHead(ctx, x, y, angle, r, skin, anim, look, t, flash = 0, drain = 0) {
   const mood   = anim ? anim.getMood() : "idle";
   const blink  = anim ? anim.getBlink() : 0;
   const tongue = anim ? anim.getTongue() : 0;

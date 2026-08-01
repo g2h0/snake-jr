@@ -199,6 +199,15 @@ body::before {
   transform: rotate(6deg);
   margin-left: 0.2em;
 }
+/* Title mascot: an idle snake in the selected skin, drawn by src/main.js.
+   Fixed CSS box so the layout never shifts as the canvas repaints. */
+#mascot-canvas {
+  display: block;
+  width: min(320px, 70vw);
+  height: 110px;
+  margin: -6px 0 -4px;
+  pointer-events: none;
+}
 .tagline {
   font-family: var(--font-display);
   color: rgba(255,255,255,0.85);
@@ -299,6 +308,13 @@ body::before {
   cursor: pointer;
   box-shadow: inset 0 2px 0 rgba(255,255,255,0.6), 0 4px 0 rgba(0,0,0,0.35);
   text-shadow: 0 1px 0 rgba(255,255,255,0.4);
+}
+.skin-preview {
+  display: block;
+  width: 100%;
+  height: 34px;
+  margin-bottom: 5px;
+  pointer-events: none;
 }
 .skin-chip .skin-lock {
   display: block;

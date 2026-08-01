@@ -7,9 +7,11 @@ import { haptics } from "./haptics.js";
 import { storage } from "./storage.js";
 import { fetchTop, submitScore, flushQueue } from "./leaderboard.js";
 import { EMOJIS, SKIN_UNLOCKS, TAGLINES, DEATH_HEADINGS } from "./config.js";
-import { unlockedSkins, newlyUnlocked, SKINS } from "./skins.js";
+import { unlockedSkins, newlyUnlocked, SKINS, getSkin } from "./skins.js";
 import { WORLD_UNLOCKS, WORLDS, unlockedWorlds, newlyUnlockedWorlds, getWorld } from "./worlds.js";
 import { getNextUnlock } from "./progression.js";
+import { drawSnakeBodyPath, drawSnakeHead } from "./renderer.js";
+import { createSnakeAnim } from "./snakeAnim.js";
 import { REDUCED } from "./motion.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -25,6 +27,15 @@ const scenes = {
 function showScene(name) {
   for (const [k, el] of Object.entries(scenes)) {
     el.classList.toggle("active", k === name);
+  }
+  // The title mascot is the only animation loop outside the game. It runs
+  // exactly while the title is on screen — every other scene leaves the page
+  // with no rAF of ours pending.
+  if (name === "title") {
+    paintTitleArt();
+    startMascot();
+  } else {
+    stopMascot();
   }
 }
 
@@ -91,12 +102,164 @@ function selectedWorldId(best = storage.getBest()) {
   return "backyard";
 }
 
+// --- Title snake art (mascot + skin chip previews) ---
+// Both draw the same idle serpentine through the renderer's shared helpers, so
+// what the chip shows is exactly what the playfield will draw.
+
+const mascotCanvas = $("#mascot-canvas");
+const mascotCtx = mascotCanvas.getContext("2d");
+const mascotAnim = createSnakeAnim();
+const MASCOT_FRAME_MS = 32; // ~30fps is plenty for a menu idle
+let mascotRaf = 0;
+let mascotLastFrame = 0;
+let mascotClock = 0;
+let mascotW = 0;
+let mascotH = 0;
+
+// Reused so the 30fps idle allocates nothing per frame.
+const posePoints = [];
+const mascotLook = { x: 0, y: 0 };
+const mascotPose = {
+  bodyW: 0, amp: 0, pad: 0, lift: 0,
+  baseline: 0.6, n: 22, t: 0, glow: 0.22,
+  anim: mascotAnim, look: mascotLook,
+};
+
+// Serpentine idle pose, points ordered tail -> head (the direction
+// drawSnakeBodyPath tapers along). `lift` raises the head end so the snake
+// reads as reared up rather than lying flat.
+function drawSnakePose(ctx, w, h, skin, opts) {
+  const { bodyW, amp, pad, t = 0, lift = 0, baseline = 0.5, n = 14, glow = 0.2 } = opts;
+  const phase = t / 900;
+  for (let i = 0; i < n; i++) {
+    const u = i / (n - 1);
+    let p = posePoints[i];
+    if (!p) { p = { x: 0, y: 0 }; posePoints[i] = p; }
+    p.x = pad + u * (w - pad * 2);
+    p.y = h * baseline + Math.sin(u * Math.PI * 2.1 - phase) * amp * (0.4 + u * 0.6) - lift * u * u;
+  }
+  posePoints.length = n;
+  drawSnakeBodyPath(ctx, posePoints, skin, { width: bodyW, t, glow });
+  const head = posePoints[n - 1];
+  const neck = posePoints[n - 2];
+  drawSnakeHead(ctx, head.x, head.y,
+    Math.atan2(head.y - neck.y, head.x - neck.x),
+    bodyW * 0.625, skin, opts.anim || null, opts.look || null, t);
+}
+
+// Size a canvas's backing store for the current DPR. Returns its CSS size, or
+// null when it has no layout yet (the title scene is still display:none).
+function fitCanvas(canvas, ctx) {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width < 8 || rect.height < 8) return null;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.round(rect.width);
+  const h = Math.round(rect.height);
+  const bw = Math.floor(w * dpr);
+  const bh = Math.floor(h * dpr);
+  if (canvas.width !== bw || canvas.height !== bh) {
+    canvas.width = bw;
+    canvas.height = bh;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { w, h };
+}
+
+function insetRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Redrawn whole on every refreshTitle(); the old canvases go with the chips.
+function drawSkinPreviews() {
+  for (const canvas of $$(".skin-preview")) {
+    const ctx = canvas.getContext("2d");
+    const size = fitCanvas(canvas, ctx);
+    if (!size) continue;
+    const { w, h } = size;
+    // Dark window so a bright chip gradient never swallows its own snake.
+    ctx.fillStyle = "rgba(10, 8, 32, 0.45)";
+    insetRect(ctx, 0, 0, w, h, 10);
+    ctx.fill();
+    drawSnakePose(ctx, w, h, getSkin(canvas.dataset.skin), {
+      bodyW: Math.min(9, h * 0.27),
+      amp: h * 0.17,
+      pad: h * 0.32,
+      glow: 0.16,
+    });
+  }
+}
+
+function drawMascot() {
+  if (!mascotW) return;
+  mascotCtx.clearRect(0, 0, mascotW, mascotH);
+  mascotPose.bodyW = Math.min(22, mascotH * 0.19);
+  mascotPose.amp = mascotH * 0.2;
+  mascotPose.pad = mascotH * 0.22;
+  mascotPose.lift = mascotH * 0.16;
+  mascotPose.t = mascotClock;
+  // Slow wander, so the eyes idly look around the title screen.
+  mascotLook.x = mascotW * (0.5 + Math.sin(mascotClock / 2600) * 0.6);
+  mascotLook.y = mascotH * (0.3 + Math.cos(mascotClock / 3300) * 0.5);
+  drawSnakePose(mascotCtx, mascotW, mascotH, getSkin(storage.getSkin()), mascotPose);
+}
+
+function mascotFrame(now) {
+  mascotRaf = requestAnimationFrame(mascotFrame);
+  const dt = now - mascotLastFrame;
+  if (dt < MASCOT_FRAME_MS) return;
+  mascotLastFrame = now;
+  mascotClock += Math.min(100, dt);
+  mascotAnim.update(dt);
+  drawMascot();
+}
+
+// The E2E suite asserts zero rAF while the submit scene is up, so this loop is
+// hard-stopped from showScene() on every exit and from visibilitychange.
+function startMascot() {
+  stopMascot();
+  const size = fitCanvas(mascotCanvas, mascotCtx);
+  if (!size) return;
+  mascotW = size.w;
+  mascotH = size.h;
+  if (REDUCED) { drawMascot(); return; } // one still pose, no loop
+  mascotLastFrame = performance.now();
+  mascotRaf = requestAnimationFrame(mascotFrame);
+}
+
+function stopMascot() {
+  if (!mascotRaf) return;
+  cancelAnimationFrame(mascotRaf);
+  mascotRaf = 0;
+}
+
+// refreshTitle() runs before showScene("title") on some paths, when the scene
+// still has no layout; showScene repaints once it does.
+function paintTitleArt() {
+  drawSkinPreviews();
+  const size = fitCanvas(mascotCanvas, mascotCtx);
+  if (!size) return;
+  mascotW = size.w;
+  mascotH = size.h;
+  drawMascot();
+}
+
 function refreshTitle() {
   const best = storage.getBest();
   bestEl.textContent = best;
   taglineEl.textContent = pick(TAGLINES);
   renderNextUnlock(titleNextUnlockEl, best);
   // skins
+  for (const canvas of skinSelectEl.querySelectorAll(".skin-preview")) {
+    canvas.width = 0; // release the backing store before the chips are dropped
+    canvas.height = 0;
+  }
   skinSelectEl.innerHTML = "";
   const unlocked = new Set(unlockedSkins(best));
   const current = storage.getSkin();
@@ -112,6 +275,12 @@ function refreshTitle() {
     btn.style.background = `linear-gradient(135deg, ${swatch[0]}, ${swatch[1]})`;
     btn.title = s.name;
     btn.innerHTML = `<span class="skin-name">${s.name}</span>${isUnlocked ? "" : `<span class="skin-lock">🔒 ${s.unlockAt}</span>`}`;
+    // Live preview of the actual skin. A canvas adds nothing to textContent,
+    // so the chip still reads "<name>🔒 <unlockAt>".
+    const preview = document.createElement("canvas");
+    preview.className = "skin-preview";
+    preview.dataset.skin = s.id;
+    btn.prepend(preview);
     btn.addEventListener("click", () => {
       if (!isUnlocked) return;
       storage.setSkin(s.id);
@@ -145,6 +314,7 @@ function refreshTitle() {
     });
     worldSelectEl.appendChild(btn);
   }
+  paintTitleArt();
 }
 
 $("#btn-play").addEventListener("click", () => {
@@ -383,9 +553,21 @@ $("#btn-pause").addEventListener("click", pauseGame);
 $("#btn-resume").addEventListener("click", resumeGame);
 $("#btn-quit").addEventListener("click", quitToMenu);
 
-// Auto-pause if the kid switches apps / the tab is hidden mid-game.
+// Auto-pause if the kid switches apps / the tab is hidden mid-game, and park
+// the mascot loop rather than let a hidden tab keep it queued.
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden && scenes.game.classList.contains("active")) pauseGame();
+  if (document.hidden) {
+    stopMascot();
+    if (scenes.game.classList.contains("active")) pauseGame();
+  } else if (scenes.title.classList.contains("active")) {
+    startMascot();
+  }
+});
+
+// Canvas backing stores are sized in device pixels, so a rotate/resize needs a
+// repaint. Only ever touches the title art, and only while it's on screen.
+window.addEventListener("resize", () => {
+  if (scenes.title.classList.contains("active")) paintTitleArt();
 });
 
 // --- Submit scene ---
