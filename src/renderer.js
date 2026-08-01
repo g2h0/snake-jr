@@ -11,7 +11,7 @@ import { REDUCED } from "./motion.js";
 // read from the middle of the playfield instead of only in the margins.
 const FIELD_ALPHA = 0.68;
 const FIELD_RADIUS = 18;
-const DECOR_IN_FIELD = 0.42;
+const DECOR_IN_FIELD = 0.7;
 // Sky overdraw. game.js renders the whole frame through the screen-shake
 // translate, which peaks around 31px on the death shake, so the sky (and the
 // baked copy of it) has to reach past the canvas edge by more than that.
@@ -24,9 +24,13 @@ export function createRenderer(canvas) {
   let offsetY = 0;
   let widthPx = 0;
   let heightPx = 0;
+  // The scale resize() handed to setTransform. The bake reuses this exact value
+  // rather than re-deriving canvas.width / widthPx, which drifts by a fraction
+  // of a pixel whenever rect.width * dpr isn't an integer.
+  let dpr = 1;
 
   function resize() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    dpr = Math.min(2, window.devicePixelRatio || 1);
     const rect = canvas.getBoundingClientRect();
     canvas.width  = Math.floor(rect.width  * dpr);
     canvas.height = Math.floor(rect.height * dpr);
@@ -64,17 +68,15 @@ export function createRenderer(canvas) {
     const key = `${worldId}|${canvas.width}x${canvas.height}|${cellPx}`;
     if (key === backdropKey) return true;
     if (!canvas.width || !canvas.height || !widthPx || !heightPx) return false;
-    // Bake in device pixels at the live context's scale, with BLEED of margin so
-    // a shaking frame never drags a transparent edge into view.
-    const sx = canvas.width / widthPx;
-    const sy = canvas.height / heightPx;
-    const mx = Math.round(BLEED * sx);
-    const my = Math.round(BLEED * sy);
-    backdrop.width = canvas.width + mx * 2;
-    backdrop.height = canvas.height + my * 2;
-    bleedX = mx / sx;
-    bleedY = my / sy;
-    backdropCtx.setTransform(sx, 0, 0, sy, mx, my);
+    // Bake in device pixels at the live context's scale — the same `dpr`
+    // resize() set the transform with — plus BLEED of margin so a shaking frame
+    // never drags a transparent edge into view.
+    const margin = Math.round(BLEED * dpr);
+    backdrop.width = canvas.width + margin * 2;
+    backdrop.height = canvas.height + margin * 2;
+    bleedX = margin / dpr;
+    bleedY = bleedX;
+    backdropCtx.setTransform(dpr, 0, 0, dpr, margin, margin);
     backdropCtx.clearRect(-bleedX, -bleedY, widthPx + bleedX * 2, heightPx + bleedY * 2);
     paintStillBackdrop(backdropCtx, world);
     backdropKey = key;
@@ -82,9 +84,7 @@ export function createRenderer(canvas) {
   }
 
   function blitBackdrop() {
-    const sx = canvas.width / widthPx;
-    const sy = canvas.height / heightPx;
-    ctx.drawImage(backdrop, -bleedX, -bleedY, backdrop.width / sx, backdrop.height / sy);
+    ctx.drawImage(backdrop, -bleedX, -bleedY, backdrop.width / dpr, backdrop.height / dpr);
   }
 
   // The bake is a full-screen backing store and Safari is slow to reclaim those,
@@ -95,16 +95,35 @@ export function createRenderer(canvas) {
     backdrop.height = 0;
   }
 
+  // Clip to "everything the canvas can show, minus the field plate", so a decor
+  // pass lands on the sky and stops at the plate's edge. Even-odd over the two
+  // sub-paths does the subtraction; the margin covers the bake's bleed.
+  function clipOutsideField(c, x, y, w, h) {
+    const m = BLEED * 2;
+    c.beginPath();
+    c.rect(-m, -m, widthPx + m * 2, heightPx + m * 2);
+    roundRectPath(c, x, y, w, h, FIELD_RADIUS);
+    c.clip("evenodd");
+  }
+
   function paintStillBackdrop(c, world) {
     const x = offsetX, y = offsetY;
     const w = GRID.cols * cellPx;
     const h = GRID.rows * cellPx;
 
     drawSky(c, world, widthPx, heightPx);
+    // Full-strength decor covers the sky only — the plate is cut out of it.
+    // Uncut, it also showed through the 0.68-alpha plate at ~0.32 strength and
+    // added itself to the dimmed pass below, so still-decor worlds ran hotter
+    // inside the field than DECOR_IN_FIELD asked for, and hotter than the
+    // live-decor worlds, whose sky pass has always cut the plate out.
+    c.save();
+    clipOutsideField(c, x, y, w, h);
     drawStillDecor(c, world, widthPx, heightPx, 1);
     // Calm mode bakes the moving decor too, frozen: the sky keeps its stars and
     // snow, they just don't drift.
     if (REDUCED) drawLiveDecor(c, world, widthPx, heightPx, 0, 1);
+    c.restore();
 
     // Play area: translucent, so the sky and its decor stay legible underneath.
     const grad = c.createLinearGradient(x, y, x, y + h);
@@ -189,10 +208,7 @@ export function createRenderer(canvas) {
     // Moving decor, in two clipped passes so it lands at full strength on the
     // sky and dimmed on the plate — the same split the bake gives still decor.
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(-BLEED, -BLEED, widthPx + BLEED * 2, heightPx + BLEED * 2);
-    roundRectPath(ctx, x, y, w, h, FIELD_RADIUS);
-    ctx.clip("evenodd");
+    clipOutsideField(ctx, x, y, w, h);
     drawLiveDecor(ctx, world, widthPx, heightPx, t, 1);
     ctx.restore();
 
