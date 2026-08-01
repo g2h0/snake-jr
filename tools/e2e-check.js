@@ -191,16 +191,16 @@ function startStaticServer(root, port) {
       globalThis.__SNAKE_JR_TEST_CONFIG__ = { supabaseUrl, supabasePublishableKey };
       const q = [
         0.755, 0.51,                   // apple1 -> (15,12)
-        0.07, 0.51, 0.99,              // after eat1: apple2 -> (1,12), no golden
-        0.36, 0.51, 0.03, 0.22, 0.51,  // after eat2: apple3 -> (7,12), golden -> (4,12)
-        0.86, 0.51, 0.99,              // after eat3: apple4 -> (17,12), no golden
-        0.51, 0.09, 0.99,              // after eat4: apple5 -> (10,2), out of the way
+        0.07, 0.51, 0.99, 0.99,        // after eat1: apple2 -> (1,12), no 67, no gold
+        0.36, 0.51, 0.03, 0.22, 0.51,  // after eat2: apple3 -> (7,12), 67 -> (4,12); gold roll skipped (67 out)
+        0.86, 0.51, 0.99, 0.99,        // after eat3: apple4 -> (17,12), no 67, no gold
+        0.51, 0.09, 0.99, 0.99,        // after eat4: apple5 -> (10,2), out of the way
       ];
       const real = Math.random.bind(Math);
       Math.random = function () {
         if (q.length) {
           const s = new Error().stack || "";
-          if (s.includes("spawnFood") || s.includes("maybeSpawnGolden")) return q.shift();
+          if (s.includes("spawnFood") || s.includes("maybeSpawn")) return q.shift();
         }
         return real();
       };
@@ -465,6 +465,47 @@ function startStaticServer(root, port) {
       activeWorld.canvas === "space" && activeWorld.label.includes("Space"),
       JSON.stringify(activeWorld));
     await page.screenshot({ path: path.join(SCREEN_DIR, "space-world.png") });
+
+    // --- gold apple (+7): flat seven, combo keeps rolling ---
+    // Fresh page with its own deterministic spawn queue: apples on the snake's
+    // row auto-feed it, a gold apple lands at (5,12) between them.
+    const goldPage = await browser.newPage({ viewport: { width: 820, height: 1080 } });
+    await goldPage.addInitScript(({ supabaseUrl, supabasePublishableKey }) => {
+      globalThis.__SNAKE_JR_TEST_CONFIG__ = { supabaseUrl, supabasePublishableKey };
+      const q = [
+        0.755, 0.51,                          // apple1 -> (15,12)
+        0.07, 0.51, 0.99, 0.05, 0.26, 0.51,   // after eat1: apple2 -> (1,12), no 67, gold -> (5,12)
+        0.62, 0.51,                           // after eat2: apple3 -> (12,12); both special rolls skipped (gold out)
+        0.51, 0.09, 0.99, 0.99,               // after gold+eat3: apple4 -> (10,2), out of the way
+      ];
+      const real = Math.random.bind(Math);
+      Math.random = function () {
+        if (q.length) {
+          const s = new Error().stack || "";
+          if (s.includes("spawnFood") || s.includes("maybeSpawn")) return q.shift();
+        }
+        return real();
+      };
+      localStorage.clear();
+    }, { supabaseUrl: MOCK_SUPABASE_URL, supabasePublishableKey: MOCK_SUPABASE_KEY });
+    await goldPage.goto(`http://127.0.0.1:${PORT}/`);
+    await goldPage.waitForSelector("#btn-play");
+    await goldPage.click("#btn-play");
+    const goldScoreAtLeast = async (n, timeout) => {
+      const t0g = Date.now();
+      while (Date.now() - t0g < timeout) {
+        const sc = parseInt(await goldPage.textContent("#hud-score"), 10);
+        if (sc >= n) return sc;
+        await goldPage.waitForTimeout(40);
+      }
+      throw new Error(`gold run: score never reached ${n}`);
+    };
+    // eats: +1, +2 (x2), gold flat +7 -> 10, then +4 (x4) -> 14
+    let gs = await goldScoreAtLeast(10, 15000);
+    check("gold apple is flat +7 mid-combo (score exactly 10)", gs === 10, `got ${gs}`);
+    gs = await goldScoreAtLeast(14, 15000);
+    check("combo keeps rolling after the gold apple (score exactly 14)", gs === 14, `got ${gs}`);
+    await goldPage.close();
 
     check("no unexpected console errors", errors.length === 0, JSON.stringify(errors));
 

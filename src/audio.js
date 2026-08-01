@@ -74,6 +74,8 @@ export const sfx = {
     sweep({ from: 500, to: 1400, duration: 0.35, type: "triangle", gain: 0.9 });
     setTimeout(() => sweep({ from: 800, to: 1800, duration: 0.3, type: "triangle", gain: 0.7 }), 100);
   },
+  // The +7 gold apple: one bright sweep — golden's little sibling.
+  gold()         { sweep({ from: 600, to: 1500, duration: 0.28, type: "triangle", gain: 0.8 }); },
   milestone()    {
     const notes = [523, 659, 784, 1047]; // C E G C
     notes.forEach((f, i) => setTimeout(() => blip({ freq: f, duration: 0.15, type: "triangle", gain: 0.7 }), i * 90));

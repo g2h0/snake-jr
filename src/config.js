@@ -24,7 +24,10 @@ export const SCORE = {
   appleBase: 1,
   goldenApple: 67,
   goldenChance: 0.05,
-  goldenLifetimeMs: 8000,
+  goldenLifetimeMs: 6700, // the 67 sticks around for exactly 6.7 seconds
+  goldApple: 7,           // the gold apple: the 67's little sibling
+  goldChance: 0.09,
+  goldLifetimeMs: 10000,  // lesser prize, friendlier timer
   comboCapMultiplier: 5,
   comboWindowMs: 2600, // eat the next apple within this to chain a combo
 };

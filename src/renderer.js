@@ -268,6 +268,62 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
+  // The +7 gold apple: the regular apple silhouette dipped in gold, with its
+  // value stamped on so the prize is readable at a glance. The rainbow conic
+  // stays the 67's signature.
+  function drawGoldApple(cell, t) {
+    const { x, y } = cellToPx(cell.x, cell.y);
+    const r = cellPx * 0.44;
+    const cx = x + cellPx / 2;
+    const cy = y + cellPx / 2;
+    const s = 1 + Math.sin(t / 190) * 0.1;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+
+    // stem + leaf, gilded
+    ctx.strokeStyle = "#b8860b";
+    ctx.lineWidth = Math.max(1.4, r * 0.18);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 0.6);
+    ctx.quadraticCurveTo(r * 0.04, -r * 0.95, r * 0.18, -r * 1.08);
+    ctx.stroke();
+    ctx.fillStyle = "#ffef9e";
+    ctx.beginPath();
+    ctx.ellipse(r * 0.46, -r * 1.0, r * 0.34, r * 0.15, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // same two-lobe union as the everyday apple, in gold
+    ctx.shadowColor = "#ffe066";
+    ctx.shadowBlur = 18;
+    const g = ctx.createRadialGradient(-r * 0.36, -r * 0.4, r * 0.05, 0, 0, r * 1.3);
+    g.addColorStop(0, "#fff6c9");
+    g.addColorStop(0.5, "#ffd94d");
+    g.addColorStop(1, "#c8960c");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.4, r * 0.05, r * 0.72, r * 0.9, 0, 0, Math.PI * 2);
+    ctx.ellipse( r * 0.4, r * 0.05, r * 0.72, r * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // shine
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.46, -r * 0.34, r * 0.26, r * 0.13, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // "7" stamp
+    const labelPx = Math.max(8, Math.round(cellPx * 0.5));
+    ctx.font = `900 ${labelPx}px 'Lilita One', system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#0a0820";
+    ctx.fillText("7", 0, r * 0.12);
+    ctx.restore();
+  }
+
   function drawGolden(cell, t) {
     const { x, y } = cellToPx(cell.x, cell.y);
     const r = cellPx * 0.5;
@@ -496,6 +552,7 @@ export function createRenderer(canvas) {
     drawFieldBg,
     drawApple,
     drawGolden,
+    drawGoldApple,
     drawSnake,
     cellToPx,
     getCellPx,

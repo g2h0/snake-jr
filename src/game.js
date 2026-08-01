@@ -31,7 +31,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
   // Reused each frame so rendering allocates nothing per frame.
   const snakeOpts = { prevBody: null, alpha: 1, anim, look: null };
 
-  let snake, dir, queuedDirs, apple, golden, score, tickMs, lastApplePos;
+  let snake, dir, queuedDirs, apple, golden, gold, score, tickMs, lastApplePos;
   let prevBody = [];   // where each segment sat last tick, for render interpolation
   let alive = false;
   let paused = false;
@@ -43,6 +43,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
   let rafId = 0;
   let lastFrame = 0;
   let goldenSpawnedAt = 0;
+  let goldSpawnedAt = 0;
   let firedMilestones = new Set();
   const onResize = () => renderer.resize();
 
@@ -68,6 +69,8 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     lastEatAt = 0;
     golden = null;
     goldenSpawnedAt = 0;
+    gold = null;
+    goldSpawnedAt = 0;
     firedMilestones.clear();
     apple = spawnFood();
     lastApplePos = { ...apple };
@@ -80,6 +83,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     if (snake.body.some(s => eq(s, cell))) return true;
     if (apple && eq(apple, cell)) return true;
     if (golden && eq(golden, cell)) return true;
+    if (gold && eq(gold, cell)) return true;
     return false;
   }
 
@@ -95,7 +99,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
   }
 
   function maybeSpawnGolden(now) {
-    if (golden) return;
+    if (golden || gold) return; // one special apple on the field at a time
     if (Math.random() < SCORE.goldenChance) {
       let c;
       let tries = 0;
@@ -106,6 +110,23 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
       } while (occupied(c));
       golden = c;
       goldenSpawnedAt = now;
+    }
+  }
+
+  // The gold apple: flat +7, shows up a bit more often than the 67 but never
+  // alongside it. Rolled after the 67 so the rarer prize gets first dibs.
+  function maybeSpawnGoldApple(now) {
+    if (golden || gold) return;
+    if (Math.random() < SCORE.goldChance) {
+      let c;
+      let tries = 0;
+      do {
+        c = { x: Math.floor(Math.random() * GRID.cols), y: Math.floor(Math.random() * GRID.rows) };
+        tries++;
+        if (tries > 200) return;
+      } while (occupied(c));
+      gold = c;
+      goldSpawnedAt = now;
     }
   }
 
@@ -137,6 +158,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     // self-collision (ignore the tail because it will move unless we're growing)
     let willGrow = false;
     if (golden && eq(next, golden)) willGrow = true;
+    if (gold && eq(next, gold)) willGrow = true;
     if (eq(next, apple)) willGrow = true;
     const compareUntil = willGrow ? snake.body.length : snake.body.length - 1;
     for (let i = 0; i < compareUntil; i++) {
@@ -153,13 +175,18 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
       // eat
       let gained = SCORE.appleBase;
       let isGolden = golden && eq(next, golden);
+      let isGold = gold && eq(next, gold);
       if (isGolden) {
         gained = SCORE.goldenApple;
         golden = null;
+      } else if (isGold) {
+        gained = SCORE.goldApple;
+        gold = null;
       } else {
         apple = spawnFood();
-        // possibly spawn a golden alongside
+        // possibly spawn a special alongside
         maybeSpawnGolden(now);
+        maybeSpawnGoldApple(now);
       }
 
       // combo logic
@@ -170,10 +197,10 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
       }
       lastEatAt = now;
       const multiplier = Math.max(1, combo);
-      // The ✨67✨ apple is always worth exactly 67 — no combo multiplication.
-      // (It's the whole bit, and it keeps one lucky bite from unlocking
-      // every skin at once.) It still extends the combo chain.
-      const points = isGolden ? gained : gained * multiplier;
+      // The ✨67✨ and gold apples are worth exactly their number — no combo
+      // multiplication. (It's the whole bit, and it keeps one lucky bite from
+      // unlocking every skin at once.) They still extend the combo chain.
+      const points = (isGolden || isGold) ? gained : gained * multiplier;
       score += points;
 
       // visuals + audio
@@ -187,6 +214,12 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
         effects.burstConfetti(px + cellPx / 2, py + cellPx / 2, 36, ["#ffe066","#ff3bd4","#36f1ff","#fff"]);
         effects.shake(10, 250);
         onGolden?.(points);
+      } else if (isGold) {
+        sfx.gold();
+        haptics.golden();
+        effects.popup(px + cellPx / 2, py + cellPx / 2, `+${points} ✨`, "#ffe066");
+        effects.burstConfetti(px + cellPx / 2, py + cellPx / 2, 18, ["#ffe066", "#fff3b0", "#ffffff"], 4.5);
+        effects.shake(6, 180);
       } else {
         sfx.eat();
         haptics.eat();
@@ -227,9 +260,12 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
       onScoreChange?.(score, combo);
     }
 
-    // expire golden
+    // expire specials
     if (golden && (now - goldenSpawnedAt) > SCORE.goldenLifetimeMs) {
       golden = null;
+    }
+    if (gold && (now - goldSpawnedAt) > SCORE.goldLifetimeMs) {
+      gold = null;
     }
   }
 
@@ -276,11 +312,12 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
     renderer.drawFieldBg(worldId, now);
     if (apple)  renderer.drawApple(apple, now, worldId);
     if (golden) renderer.drawGolden(golden, now);
+    if (gold)   renderer.drawGoldApple(gold, now);
     // Render-only interpolation: the snake glides between ticks while the
     // grid-stepped logic above stays exactly as it was.
     snakeOpts.prevBody = prevBody;
     snakeOpts.alpha = alive ? Math.max(0, Math.min(1, (now - lastTickAt) / tickMs)) : 1;
-    snakeOpts.look = golden || apple || null;
+    snakeOpts.look = golden || gold || apple || null;
     renderer.drawSnake(snake, getSkin?.() || "default", now, snakeOpts);
     effects.drawOverlay(ctx, renderer.getSize().w, renderer.getSize().h);
     ctx.restore();
