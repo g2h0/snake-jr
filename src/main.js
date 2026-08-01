@@ -231,12 +231,13 @@ function startGame() {
         skinUnlocks: newlyUnlocked(prevBest, newBest),
         worldUnlocks: newlyUnlockedWorlds(prevBest, newBest),
       };
-      // Let the death shake/confetti play out, then tear the game down so the
-      // rAF loop and input listeners don't keep running behind the menus.
+      // Let the whole death beat play out — flash, colour drain, dizzy stars —
+      // then tear the game down so the rAF loop and input listeners don't keep
+      // running behind the menus.
       setTimeout(() => {
         if (gameInstance) { gameInstance.destroy(); gameInstance = null; }
         openSubmit();
-      }, 700);
+      }, 1100);
     },
   });
   gameInstance.start();

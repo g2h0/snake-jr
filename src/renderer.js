@@ -184,7 +184,19 @@ export function createRenderer(canvas) {
   const runRanges = [];               // flat quads: offset, count, idxFirst, idxLast
   const runPoints = [];               // windowed view into pointPool for one run
   const lookPx = { x: 0, y: 0 };
-  const bodyOpts = { width: 0, t: 0, u0: 0, u1: 1, index0: 0, indexStep: -1, glow: 0 };
+  const bodyOpts = { width: 0, t: 0, u0: 0, u1: 1, index0: 0, indexStep: -1, glow: 0, flash: 0, drain: 0 };
+
+  // Death beat, all derived from anim.getDeathT(): one white pop, then the
+  // colour drains out of the whole snake while the head goes dizzy.
+  const DEATH_FLASH_MS = 170;
+  const DEATH_DRAIN_MS = 850;
+  const DEATH_DRAIN_MAX = 0.62;
+  function deathFlash(deathT) {
+    return deathT < 0 ? 0 : Math.max(0, 1 - deathT / DEATH_FLASH_MS);
+  }
+  function deathDrain(deathT) {
+    return deathT < 0 ? 0 : Math.min(1, deathT / DEATH_DRAIN_MS) * DEATH_DRAIN_MAX;
+  }
 
   // opts: { prevBody, alpha, anim, look } — prevBody/alpha come from the tick
   // interpolation in game.js, anim is a createSnakeAnim() the renderer only reads.
@@ -265,8 +277,11 @@ export function createRenderer(canvas) {
     ctx.stroke();
     ctx.restore();
 
+    const deathT = anim ? anim.getDeathT() : -1;
     bodyOpts.width = bodyW;
     bodyOpts.t = t;
+    bodyOpts.flash = deathFlash(deathT);
+    bodyOpts.drain = deathDrain(deathT);
     for (let r = 0; r < runs; r++) {
       const count = runRanges[r * 4 + 1];
       const idxFirst = runRanges[r * 4 + 2];
@@ -294,13 +309,13 @@ export function createRenderer(canvas) {
     drawSnakeHead(ctx,
       offsetX + (cellX[0] + 0.5) * cellPx,
       offsetY + (cellY[0] + 0.5) * cellPx,
-      headAngle, headR, skin, anim, look, t);
+      headAngle, headR, skin, anim, look, t, bodyOpts.flash, bodyOpts.drain);
     if (n > 1 && splitAfter(0)) {
       // Mid-wrap: the same head is still leaning out of the opposite wall.
       drawSnakeHead(ctx,
         offsetX + (unwrap(cellX[0], cellX[1], GRID.cols) + 0.5) * cellPx,
         offsetY + (unwrap(cellY[0], cellY[1], GRID.rows) + 0.5) * cellPx,
-        headAngle, headR, skin, anim, look, t);
+        headAngle, headR, skin, anim, look, t, bodyOpts.flash, bodyOpts.drain);
     }
     ctx.restore();
   }
@@ -416,6 +431,8 @@ function traceBody(ctx, points, n) {
 //   index0     body segment index of points[0], and indexStep per point (hue)
 //   glow       alpha of the glow pass, 0 to skip it
 //   highlight  draw the chrome spine highlight (default true)
+//   flash      0-1 white blow-out over the body (death impact)
+//   drain      0-1 grey wash over the body (colour draining after death)
 export function drawSnakeBodyPath(ctx, points, skin, opts = {}) {
   const n = points.length;
   if (!n) return;
@@ -427,6 +444,8 @@ export function drawSnakeBodyPath(ctx, points, skin, opts = {}) {
   const glow = opts.glow ?? 0.18;
   const index0 = opts.index0 ?? 0;
   const indexStep = opts.indexStep ?? 1;
+  const flash = opts.flash ?? 0;
+  const drain = opts.drain ?? 0;
   const rainbow = skin.body === null;
   const ramp = rainbow ? null : bodyRamp(skin.body[0], skin.body[1]);
 
@@ -435,10 +454,12 @@ export function drawSnakeBodyPath(ctx, points, skin, opts = {}) {
   ctx.lineJoin = "round";
 
   if (n === 1) {
-    ctx.fillStyle = rainbow ? rainbowAt(index0, t) : ramp[RAMP_STEPS - 1];
     ctx.beginPath();
     ctx.arc(points[0].x, points[0].y, width / 2, 0, Math.PI * 2);
+    ctx.fillStyle = rainbow ? rainbowAt(index0, t) : ramp[RAMP_STEPS - 1];
     ctx.fill();
+    if (drain > 0) { ctx.globalAlpha = drain; ctx.fillStyle = "#8a8fa6"; ctx.fill(); }
+    if (flash > 0) { ctx.globalAlpha = flash; ctx.fillStyle = "#ffffff"; ctx.fill(); }
     ctx.restore();
     return;
   }
@@ -481,6 +502,20 @@ export function drawSnakeBodyPath(ctx, points, skin, opts = {}) {
       ? rainbowAt(index0 + indexStep * j, t)
       : ramp[Math.round(u * (RAMP_STEPS - 1))];
     ctx.stroke();
+    // Death wash: restroke the piece we just laid down, so the grey/white
+    // follows the exact taper instead of fattening the tail.
+    if (drain > 0) {
+      ctx.globalAlpha = drain;
+      ctx.strokeStyle = "#8a8fa6";
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    if (flash > 0) {
+      ctx.globalAlpha = flash;
+      ctx.strokeStyle = "#ffffff";
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
 
   // 3) thin chrome highlight, nudged up-left so the tube looks lit from above
@@ -498,7 +533,7 @@ export function drawSnakeBodyPath(ctx, points, skin, opts = {}) {
 
 // Cartoon head: an oriented ellipse with big eyes, a mood mouth and a flicking
 // tongue. `r` is the head radius across the heading; `anim` is read-only.
-function drawSnakeHead(ctx, x, y, angle, r, skin, anim, look, t) {
+function drawSnakeHead(ctx, x, y, angle, r, skin, anim, look, t, flash = 0, drain = 0) {
   const mood   = anim ? anim.getMood() : "idle";
   const blink  = anim ? anim.getBlink() : 0;
   const tongue = anim ? anim.getTongue() : 0;
@@ -559,6 +594,23 @@ function drawSnakeHead(ctx, x, y, angle, r, skin, anim, look, t) {
   ctx.beginPath();
   ctx.ellipse(-hrx * 0.5, -hry * 0.4, hrx * 0.22, hry * 0.13, -0.35, 0, Math.PI * 2);
   ctx.fill();
+
+  // Death wash goes on before the face so the X-eyes stay readable on top.
+  if (drain > 0 || flash > 0) {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, hrx, hry, 0, 0, Math.PI * 2);
+    if (drain > 0) {
+      ctx.globalAlpha = drain;
+      ctx.fillStyle = "#8a8fa6";
+      ctx.fill();
+    }
+    if (flash > 0) {
+      ctx.globalAlpha = flash;
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
 
   // mouth
   if (mood === "chomp") {
@@ -645,6 +697,46 @@ function drawSnakeHead(ctx, x, y, angle, r, skin, anim, look, t) {
     }
   }
 
+  ctx.restore();
+
+  // Dizzy stars orbit in screen space, not head space — they should keep
+  // circling the same way however the snake was pointing when it crashed.
+  if (dizzy) {
+    const deathT = anim ? anim.getDeathT() : 0;
+    const fade = deathT < 0 ? 1 : Math.min(1, deathT / 260);
+    if (fade > 0.01) {
+      const orbit = r * 1.6;
+      ctx.save();
+      ctx.globalAlpha = fade;
+      for (let i = 0; i < 3; i++) {
+        const a = clock / 260 + (i * Math.PI * 2) / 3;
+        star(ctx,
+          x + Math.cos(a) * orbit,
+          y - r * 1.9 + Math.sin(a) * orbit * 0.34,
+          r * 0.38, a * 0.7,
+          i === 1 ? "#ffffff" : "#ffe066");
+      }
+      ctx.restore();
+    }
+  }
+}
+
+// Five-pointed star, centred, `outer` is the point radius.
+function star(ctx, x, y, outer, rot, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rad = i % 2 ? outer * 0.44 : outer;
+    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const px = Math.cos(a) * rad;
+    const py = Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
   ctx.restore();
 }
 

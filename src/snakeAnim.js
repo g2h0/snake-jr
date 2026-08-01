@@ -26,6 +26,7 @@ export function createSnakeAnim() {
   let moodT = 0;         // ms left in the current mood (0 = permanent)
   let squash = 0;        // spring value, 1 = fully squashed
   let squashV = 0;
+  let deathT = -1;       // ms since onDeath(), -1 while alive — drives the death beat
 
   function reset() {
     time = 0;
@@ -37,6 +38,7 @@ export function createSnakeAnim() {
     moodT = 0;
     squash = 0;
     squashV = 0;
+    deathT = -1;
   }
 
   function setMood(next, ms) {
@@ -49,6 +51,7 @@ export function createSnakeAnim() {
       // A backgrounded tab hands back one huge dt; clamp so nothing snaps.
       const dt = Math.min(100, Math.max(0, dtMs));
       time += dt;
+      if (deathT >= 0) deathT += dt;
 
       if (mood === "dizzy") {
         // Dizzy is terminal — it holds until the next run resets us.
@@ -105,6 +108,7 @@ export function createSnakeAnim() {
       squashV = 0;
       blinkT = -1;
       tongueT = -1;
+      deathT = 0;
     },
 
     reset,
@@ -113,6 +117,8 @@ export function createSnakeAnim() {
     getTime()   { return time; },
     getMood()   { return mood; },
     getSquash() { return squash; },
+    // ms since death, -1 while alive. Renderer times the flash/drain off it.
+    getDeathT() { return deathT; },
     // 0 = wide open, 1 = shut. One close/open ramp across BLINK_MS.
     getBlink() {
       if (blinkT < 0) return 0;
