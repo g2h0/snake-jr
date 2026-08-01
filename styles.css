@@ -67,6 +67,14 @@ body::before {
   padding: env(safe-area-inset-top, 12px) env(safe-area-inset-right, 12px) env(safe-area-inset-bottom, 12px) env(safe-area-inset-left, 12px);
 }
 .scene.active { display: flex; }
+/* Enter-only, and short: `.active` is re-added on every switch, so the
+   animation replays by itself. Nothing animates on the way out — the scene is
+   display:none the instant it loses `.active`. */
+.scene.active { animation: sceneIn 240ms ease both; }
+@keyframes sceneIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
 /* ===== Buttons (chrome bubble) ===== */
 .bubble-btn {
@@ -372,7 +380,12 @@ body::before {
   align-items: stretch;
   justify-content: stretch;
 }
-#scene-game.active { display: block; }
+/* The playfield gets a plain, faster fade — a sliding canvas reads as lag. */
+#scene-game.active { display: block; animation: sceneFade 160ms ease both; }
+@keyframes sceneFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 .hud {
   position: absolute;
   top: max(12px, env(safe-area-inset-top));
@@ -820,6 +833,7 @@ body::before {
   .board-row.just-me { animation: none; }
   #banner.show { animation: bannerFade 1.4s ease both; }
   #countdown.show { animation: countFade 680ms ease both; }
+  .scene.active { animation: sceneFade 240ms ease both; }
 }
 @keyframes bannerFade {
   0%   { opacity: 0; transform: translate(-50%, -50%) scale(1); }
