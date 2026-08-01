@@ -389,6 +389,7 @@ document.addEventListener("visibilitychange", () => {
 
 // --- Submit scene ---
 const emojiRow  = $("#emoji-row");
+const letterGrid = $("#letter-grid");
 const initialsEls = [$("#init-0"), $("#init-1"), $("#init-2")];
 const submitFinalScore = $("#submit-final-score");
 const submitUnlocks    = $("#submit-unlocks");
@@ -423,10 +424,28 @@ function renderInitials() {
   });
 }
 
-function bumpInitial(idx, delta) {
-  const code = selectedInitials[idx].charCodeAt(0) - 65;
-  const next = ((code + delta) % 26 + 26) % 26;
-  selectedInitials[idx] = String.fromCharCode(65 + next);
+// A-Z keyboard. 26 keys never change, so it's built once at boot.
+function buildLetterGrid() {
+  letterGrid.innerHTML = "";
+  for (let i = 0; i < 26; i++) {
+    const letter = String.fromCharCode(65 + i);
+    const key = document.createElement("button");
+    key.className = "letter-key";
+    key.textContent = letter;
+    key.addEventListener("click", () => {
+      setInitial(letter);
+      sfx.uiTap();
+      haptics.tap();
+    });
+    letterGrid.appendChild(key);
+  }
+}
+
+// Type into the active slot, then step to the next one so three taps spell a
+// name. The third letter parks in place instead of wrapping to the first.
+function setInitial(letter) {
+  selectedInitials[activeInitialIdx] = letter;
+  if (activeInitialIdx < 2) activeInitialIdx++;
   renderInitials();
 }
 
@@ -439,22 +458,11 @@ initialsEls.forEach((el, i) => {
   });
 });
 
-$("#init-up").addEventListener("click", () => { bumpInitial(activeInitialIdx,  1); sfx.uiTap(); haptics.tap(); });
-$("#init-down").addEventListener("click", () => { bumpInitial(activeInitialIdx, -1); sfx.uiTap(); haptics.tap(); });
-$("#init-next").addEventListener("click", () => {
-  activeInitialIdx = (activeInitialIdx + 1) % 3;
-  renderInitials();
-  sfx.uiTap();
-  haptics.tap();
-});
-
 // keyboard support for initials
 window.addEventListener("keydown", (e) => {
   if (!scenes.submit.classList.contains("active")) return;
   if (/^[a-zA-Z]$/.test(e.key)) {
-    selectedInitials[activeInitialIdx] = e.key.toUpperCase();
-    if (activeInitialIdx < 2) activeInitialIdx++;
-    renderInitials();
+    setInitial(e.key.toUpperCase());
   } else if (e.key === "ArrowRight") {
     activeInitialIdx = Math.min(2, activeInitialIdx + 1); renderInitials();
   } else if (e.key === "ArrowLeft") {
@@ -462,7 +470,8 @@ window.addEventListener("keydown", (e) => {
   } else if (e.key === "Enter") {
     doSubmit();
   } else if (e.key === "Backspace") {
-    bumpInitial(activeInitialIdx, -1);
+    activeInitialIdx = Math.max(0, activeInitialIdx - 1);
+    renderInitials();
   }
 });
 
@@ -582,6 +591,7 @@ $("#btn-replay").addEventListener("click", () => { sfx.uiTap(); haptics.tap(); s
 $("#btn-home").addEventListener("click", () => { sfx.uiTap(); haptics.tap(); refreshTitle(); showScene("title"); music.start(); });
 
 // --- Boot ---
+buildLetterGrid();
 refreshTitle();
 showScene("title");
 flushQueue();
