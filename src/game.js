@@ -337,6 +337,7 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
       cancelAnimationFrame(rafId);
       window.removeEventListener("resize", onResize);
       input.destroy();
+      renderer.dispose();
     },
     isAlive() { return alive; },
     getScore() { return score; },

@@ -4,6 +4,18 @@
 import { GRID } from "./config.js";
 import { getSkin } from "./skins.js";
 import { getWorld } from "./worlds.js";
+import { REDUCED } from "./motion.js";
+
+// The field plate is translucent so the world shows through it, and its decor
+// gets a second dimmed pass inside the plate so fireflies/snow/candy stripes
+// read from the middle of the playfield instead of only in the margins.
+const FIELD_ALPHA = 0.68;
+const FIELD_RADIUS = 18;
+const DECOR_IN_FIELD = 0.42;
+// Sky overdraw. game.js renders the whole frame through the screen-shake
+// translate, which peaks around 31px on the death shake, so the sky (and the
+// baked copy of it) has to reach past the canvas edge by more than that.
+const BLEED = 36;
 
 export function createRenderer(canvas) {
   const ctx = canvas.getContext("2d");
@@ -25,6 +37,7 @@ export function createRenderer(canvas) {
     cellPx = Math.floor(Math.min(rect.width / GRID.cols, rect.height / GRID.rows));
     offsetX = Math.floor((rect.width  - cellPx * GRID.cols) / 2);
     offsetY = Math.floor((rect.height - cellPx * GRID.rows) / 2);
+    backdropKey = ""; // the bake is size-specific
   }
 
   function cellToPx(cx, cy) {
@@ -35,43 +48,158 @@ export function createRenderer(canvas) {
     ctx.clearRect(0, 0, widthPx, heightPx);
   }
 
-  function drawFieldBg(worldId, t) {
-    const world = getWorld(worldId);
-    drawWorldBackdrop(ctx, world, widthPx, heightPx, t);
+  // --- Backdrop cache ------------------------------------------------------
+  // Sky, still decor, the field plate, its grid lines and its border don't
+  // change while a run is on screen, so they're baked once per (world, size)
+  // and blitted per frame. Only moving decor is redrawn live, which also drops
+  // the border's shadowBlur and 42 grid-line segments out of the frame budget.
+  const backdrop = document.createElement("canvas");
+  const backdropCtx = backdrop.getContext("2d");
+  let backdropKey = "";
+  let bleedX = 0;   // the bake's margin, in CSS px, for the blit back
+  let bleedY = 0;
 
-    // Themed grid + glowing border
+  // Returns false when there's nothing to bake into yet (no layout).
+  function bakeBackdrop(worldId, world) {
+    const key = `${worldId}|${canvas.width}x${canvas.height}|${cellPx}`;
+    if (key === backdropKey) return true;
+    if (!canvas.width || !canvas.height || !widthPx || !heightPx) return false;
+    // Bake in device pixels at the live context's scale, with BLEED of margin so
+    // a shaking frame never drags a transparent edge into view.
+    const sx = canvas.width / widthPx;
+    const sy = canvas.height / heightPx;
+    const mx = Math.round(BLEED * sx);
+    const my = Math.round(BLEED * sy);
+    backdrop.width = canvas.width + mx * 2;
+    backdrop.height = canvas.height + my * 2;
+    bleedX = mx / sx;
+    bleedY = my / sy;
+    backdropCtx.setTransform(sx, 0, 0, sy, mx, my);
+    backdropCtx.clearRect(-bleedX, -bleedY, widthPx + bleedX * 2, heightPx + bleedY * 2);
+    paintStillBackdrop(backdropCtx, world);
+    backdropKey = key;
+    return true;
+  }
+
+  function blitBackdrop() {
+    const sx = canvas.width / widthPx;
+    const sy = canvas.height / heightPx;
+    ctx.drawImage(backdrop, -bleedX, -bleedY, backdrop.width / sx, backdrop.height / sy);
+  }
+
+  // The bake is a full-screen backing store and Safari is slow to reclaim those,
+  // so a torn-down run hands it back explicitly. A later frame just re-bakes.
+  function dispose() {
+    backdropKey = "";
+    backdrop.width = 0;
+    backdrop.height = 0;
+  }
+
+  function paintStillBackdrop(c, world) {
     const x = offsetX, y = offsetY;
     const w = GRID.cols * cellPx;
     const h = GRID.rows * cellPx;
-    // play area background
-    const grad = ctx.createLinearGradient(x, y, x, y + h);
+
+    drawSky(c, world, widthPx, heightPx);
+    drawStillDecor(c, world, widthPx, heightPx, 1);
+    // Calm mode bakes the moving decor too, frozen: the sky keeps its stars and
+    // snow, they just don't drift.
+    if (REDUCED) drawLiveDecor(c, world, widthPx, heightPx, 0, 1);
+
+    // Play area: translucent, so the sky and its decor stay legible underneath.
+    const grad = c.createLinearGradient(x, y, x, y + h);
     grad.addColorStop(0, world.field[0]);
     grad.addColorStop(1, world.field[1]);
-    ctx.fillStyle = grad;
-    ctx.globalAlpha = 0.9;
-    roundRect(ctx, x, y, w, h, 18); ctx.fill();
-    ctx.globalAlpha = 1;
+    c.fillStyle = grad;
+    c.globalAlpha = FIELD_ALPHA;
+    roundRect(c, x, y, w, h, FIELD_RADIUS); c.fill();
+    c.globalAlpha = 1;
+
+    // Second, dimmed decor pass clipped to the plate — this is what makes
+    // Candy Land tell itself apart from Space in the middle of the board.
+    c.save();
+    roundRect(c, x, y, w, h, FIELD_RADIUS); c.clip();
+    drawStillDecor(c, world, widthPx, heightPx, DECOR_IN_FIELD);
+    if (REDUCED) drawLiveDecor(c, world, widthPx, heightPx, 0, DECOR_IN_FIELD);
+    c.restore();
+
     // grid lines (very subtle)
-    ctx.strokeStyle = world.grid;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
+    c.strokeStyle = world.grid;
+    c.lineWidth = 1;
+    c.beginPath();
     for (let i = 1; i < GRID.cols; i++) {
-      ctx.moveTo(x + i * cellPx + 0.5, y);
-      ctx.lineTo(x + i * cellPx + 0.5, y + h);
+      c.moveTo(x + i * cellPx + 0.5, y);
+      c.lineTo(x + i * cellPx + 0.5, y + h);
     }
     for (let j = 1; j < GRID.rows; j++) {
-      ctx.moveTo(x, y + j * cellPx + 0.5);
-      ctx.lineTo(x + w, y + j * cellPx + 0.5);
+      c.moveTo(x, y + j * cellPx + 0.5);
+      c.lineTo(x + w, y + j * cellPx + 0.5);
     }
-    ctx.stroke();
-    // World-color border
+    c.stroke();
+
+    drawFieldFrame(c, world, x, y, w, h);
+  }
+
+  // Outer glow stroke, a crisp accent line just inside it, and four corner
+  // rivets — enough frame that the softer plate still reads as a play area.
+  function drawFieldFrame(c, world, x, y, w, h) {
+    c.save();
+    c.shadowColor = world.border;
+    c.shadowBlur = 18;
+    c.strokeStyle = world.border;
+    c.globalAlpha = 0.78;
+    c.lineWidth = 2;
+    roundRect(c, x, y, w, h, FIELD_RADIUS); c.stroke();
+    c.restore();
+
+    c.save();
+    c.strokeStyle = world.accent;
+    c.globalAlpha = 0.32;
+    c.lineWidth = 1;
+    roundRect(c, x + 5.5, y + 5.5, w - 11, h - 11, FIELD_RADIUS - 5); c.stroke();
+
+    const dot = Math.max(2.2, cellPx * 0.12);
+    const inset = FIELD_RADIUS * 0.44;
+    c.globalAlpha = 0.9;
+    c.fillStyle = world.accent;
+    c.shadowColor = world.accent;
+    c.shadowBlur = 9;
+    for (const sx of [0, 1]) {
+      for (const sy of [0, 1]) {
+        c.beginPath();
+        c.arc(x + (sx ? w - inset : inset), y + (sy ? h - inset : inset), dot, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    c.restore();
+  }
+
+  function drawFieldBg(worldId, t) {
+    if (!widthPx || !heightPx) return;
+    const world = getWorld(worldId);
+    const x = offsetX, y = offsetY;
+    const w = GRID.cols * cellPx;
+    const h = GRID.rows * cellPx;
+
+    if (bakeBackdrop(worldId, world)) blitBackdrop();
+    else paintStillBackdrop(ctx, world);
+
+    if (REDUCED || !LIVE_DECOR.has(world.decor)) return;
+
+    // Moving decor, in two clipped passes so it lands at full strength on the
+    // sky and dimmed on the plate — the same split the bake gives still decor.
     ctx.save();
-    ctx.shadowColor = world.border;
-    ctx.shadowBlur = 18;
-    ctx.strokeStyle = world.border;
-    ctx.globalAlpha = 0.78;
-    ctx.lineWidth = 2;
-    roundRect(ctx, x, y, w, h, 18); ctx.stroke();
+    ctx.beginPath();
+    ctx.rect(-BLEED, -BLEED, widthPx + BLEED * 2, heightPx + BLEED * 2);
+    roundRectPath(ctx, x, y, w, h, FIELD_RADIUS);
+    ctx.clip("evenodd");
+    drawLiveDecor(ctx, world, widthPx, heightPx, t, 1);
+    ctx.restore();
+
+    ctx.save();
+    roundRect(ctx, x, y, w, h, FIELD_RADIUS);
+    ctx.clip();
+    drawLiveDecor(ctx, world, widthPx, heightPx, t, DECOR_IN_FIELD);
     ctx.restore();
   }
 
@@ -230,7 +358,7 @@ export function createRenderer(canvas) {
     const span = Math.max(1, last);
 
     ctx.save();
-    roundRect(ctx, offsetX, offsetY, GRID.cols * cellPx, GRID.rows * cellPx, 18);
+    roundRect(ctx, offsetX, offsetY, GRID.cols * cellPx, GRID.rows * cellPx, FIELD_RADIUS);
     ctx.clip();
 
     // Lay out the runs first. A run covers body indices runStart..i (head end ..
@@ -349,6 +477,7 @@ export function createRenderer(canvas) {
     ctx,
     resize,
     clear,
+    dispose,
     drawFieldBg,
     drawApple,
     drawGolden,
@@ -747,35 +876,29 @@ function seeded(index, salt = 0) {
   return value - Math.floor(value);
 }
 
-function drawWorldBackdrop(ctx, world, width, height, t = 0) {
+function drawSky(ctx, world, width, height) {
   const sky = ctx.createLinearGradient(0, 0, 0, height);
   sky.addColorStop(0, world.sky[0]);
   sky.addColorStop(1, world.sky[1]);
   ctx.fillStyle = sky;
-  ctx.fillRect(-30, -30, width + 60, height + 60);
+  ctx.fillRect(-BLEED, -BLEED, width + BLEED * 2, height + BLEED * 2);
+}
 
+// Decor is split by whether it moves. The still half bakes into the backdrop
+// cache; the moving half is redrawn each frame. Both take a `dim` multiplier so
+// the same routine can paint the sky at full strength and the field faintly.
+const LIVE_DECOR = new Set(["fireflies", "snow", "embers", "stars"]);
+
+function drawStillDecor(ctx, world, width, height, dim) {
   ctx.save();
   switch (world.decor) {
-    case "fireflies":
-      for (let i = 0; i < 26; i++) {
-        const x = seeded(i, 1) * width;
-        const y = seeded(i, 2) * height;
-        const pulse = 0.35 + (Math.sin(t / 420 + i) + 1) * 0.25;
-        ctx.globalAlpha = pulse;
-        ctx.fillStyle = i % 3 === 0 ? "#fff58a" : "#7dff9b";
-        ctx.beginPath();
-        ctx.arc(x, y, 1.5 + seeded(i, 3) * 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      break;
-
     case "candy":
       ctx.lineWidth = 4;
       for (let i = 0; i < 18; i++) {
         const x = seeded(i, 4) * width;
         const y = seeded(i, 5) * height;
         const radius = 7 + seeded(i, 6) * 18;
-        ctx.globalAlpha = 0.18;
+        ctx.globalAlpha = 0.18 * dim;
         ctx.strokeStyle = i % 2 ? "#75f4ff" : "#ff9ee8";
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
@@ -795,7 +918,7 @@ function drawWorldBackdrop(ctx, world, width, height, t = 0) {
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
-        ctx.globalAlpha = 0.16;
+        ctx.globalAlpha = 0.16 * dim;
         ctx.fillStyle = i % 3 === 0 ? "#f6db55" : "#77f05a";
         ctx.beginPath();
         ctx.ellipse(0, 0, 5, 15, 0, 0, Math.PI * 2);
@@ -804,48 +927,9 @@ function drawWorldBackdrop(ctx, world, width, height, t = 0) {
       }
       break;
 
-    case "snow":
-      for (let i = 0; i < 44; i++) {
-        const x = seeded(i, 10) * width;
-        const speed = 0.012 + seeded(i, 11) * 0.02;
-        const y = (seeded(i, 12) * height + t * speed) % Math.max(1, height);
-        ctx.globalAlpha = 0.25 + seeded(i, 13) * 0.5;
-        ctx.fillStyle = "#eaffff";
-        ctx.beginPath();
-        ctx.arc(x, y, 1 + seeded(i, 14) * 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      break;
-
-    case "embers":
-      for (let i = 0; i < 36; i++) {
-        const x = seeded(i, 15) * width;
-        const speed = 0.018 + seeded(i, 16) * 0.026;
-        const y = height - ((seeded(i, 17) * height + t * speed) % Math.max(1, height));
-        ctx.globalAlpha = 0.25 + seeded(i, 18) * 0.55;
-        ctx.fillStyle = i % 3 ? "#ff6738" : "#ffd058";
-        ctx.beginPath();
-        ctx.arc(x, y, 1 + seeded(i, 19) * 3.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      break;
-
-    case "stars":
-      for (let i = 0; i < 60; i++) {
-        const x = seeded(i, 20) * width;
-        const y = seeded(i, 21) * height;
-        const twinkle = 0.25 + (Math.sin(t / 350 + i * 1.7) + 1) * 0.3;
-        ctx.globalAlpha = twinkle;
-        ctx.fillStyle = i % 7 === 0 ? "#bf66ff" : "#f4f1ff";
-        ctx.beginPath();
-        ctx.arc(x, y, 0.8 + seeded(i, 22) * 2.3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      break;
-
     case "arcade": {
       const horizon = height * 0.36;
-      ctx.globalAlpha = 0.2;
+      ctx.globalAlpha = 0.2 * dim;
       ctx.strokeStyle = "#36f1ff";
       ctx.lineWidth = 1;
       for (let i = -8; i <= 8; i++) {
@@ -864,6 +948,8 @@ function drawWorldBackdrop(ctx, world, width, height, t = 0) {
       break;
     }
 
+    // The 67s used to breathe between alpha 0.10 and 0.17 — invisible, and 18
+    // fillText calls a frame. They're baked at the midpoint instead.
     case "sixtyseven":
       ctx.font = "900 54px 'Lilita One', system-ui, sans-serif";
       ctx.textAlign = "center";
@@ -874,7 +960,7 @@ function drawWorldBackdrop(ctx, world, width, height, t = 0) {
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate((seeded(i, 25) - 0.5) * 0.7);
-        ctx.globalAlpha = 0.1 + (Math.sin(t / 500 + i) + 1) * 0.035;
+        ctx.globalAlpha = 0.135 * dim;
         ctx.fillStyle = i % 2 ? "#ffe066" : "#36f1ff";
         ctx.fillText("67", 0, 0);
         ctx.restore();
@@ -884,8 +970,72 @@ function drawWorldBackdrop(ctx, world, width, height, t = 0) {
   ctx.restore();
 }
 
+function drawLiveDecor(ctx, world, width, height, t, dim) {
+  ctx.save();
+  switch (world.decor) {
+    case "fireflies":
+      for (let i = 0; i < 26; i++) {
+        const x = seeded(i, 1) * width;
+        const y = seeded(i, 2) * height;
+        const pulse = 0.35 + (Math.sin(t / 420 + i) + 1) * 0.25;
+        ctx.globalAlpha = pulse * dim;
+        ctx.fillStyle = i % 3 === 0 ? "#fff58a" : "#7dff9b";
+        ctx.beginPath();
+        ctx.arc(x, y, 1.5 + seeded(i, 3) * 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+
+    case "snow":
+      for (let i = 0; i < 44; i++) {
+        const x = seeded(i, 10) * width;
+        const speed = 0.012 + seeded(i, 11) * 0.02;
+        const y = (seeded(i, 12) * height + t * speed) % Math.max(1, height);
+        ctx.globalAlpha = (0.25 + seeded(i, 13) * 0.5) * dim;
+        ctx.fillStyle = "#eaffff";
+        ctx.beginPath();
+        ctx.arc(x, y, 1 + seeded(i, 14) * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+
+    case "embers":
+      for (let i = 0; i < 36; i++) {
+        const x = seeded(i, 15) * width;
+        const speed = 0.018 + seeded(i, 16) * 0.026;
+        const y = height - ((seeded(i, 17) * height + t * speed) % Math.max(1, height));
+        ctx.globalAlpha = (0.25 + seeded(i, 18) * 0.55) * dim;
+        ctx.fillStyle = i % 3 ? "#ff6738" : "#ffd058";
+        ctx.beginPath();
+        ctx.arc(x, y, 1 + seeded(i, 19) * 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+
+    case "stars":
+      for (let i = 0; i < 60; i++) {
+        const x = seeded(i, 20) * width;
+        const y = seeded(i, 21) * height;
+        const twinkle = 0.25 + (Math.sin(t / 350 + i * 1.7) + 1) * 0.3;
+        ctx.globalAlpha = twinkle * dim;
+        ctx.fillStyle = i % 7 === 0 ? "#bf66ff" : "#f4f1ff";
+        ctx.beginPath();
+        ctx.arc(x, y, 0.8 + seeded(i, 22) * 2.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+  }
+  ctx.restore();
+}
+
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
+  roundRectPath(ctx, x, y, w, h, r);
+}
+
+// Same shape, appended to whatever path is already open — lets drawFieldBg
+// build a "canvas minus field" clip in one even-odd path.
+function roundRectPath(ctx, x, y, w, h, r) {
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
   ctx.quadraticCurveTo(x + w, y, x + w, y + r);
