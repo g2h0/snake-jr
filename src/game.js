@@ -10,6 +10,7 @@ import { createSnakeAnim } from "./snakeAnim.js";
 import { sfx } from "./audio.js";
 import { haptics } from "./haptics.js";
 import { storage } from "./storage.js";
+import { getWorld as worldTheme } from "./worlds.js";
 
 const DIRS = {
   up:    { x: 0, y: -1 },
@@ -187,6 +188,9 @@ export function createGame({ canvas, onMilestone, onDeath, onScoreChange, onGold
       } else {
         sfx.eat();
         haptics.eat();
+        // A little splash in this world's own apple colours, sized to the bite.
+        const [shine, flesh, , leaf] = worldTheme(getWorld?.() || "backyard").apple;
+        effects.burstConfetti(px + cellPx / 2, py + cellPx / 2, 10, [shine, flesh, leaf], 3.5);
         const maxed = combo >= SCORE.comboCapMultiplier;
         const label = maxed ? `+${points} MAX AURA` : combo > 1 ? `+${points} ×${combo}` : `+${points}`;
         effects.popup(px + cellPx / 2, py + cellPx / 2, label, maxed ? "#ffe066" : combo > 1 ? "#ff3bd4" : "#36f1ff");

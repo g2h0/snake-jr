@@ -82,9 +82,10 @@ export function createSnakeAnim() {
         if (tongueIn <= 0) tongueT = 0;
       }
 
-      // Damped spring back to rest after a bite.
+      // Damped spring back to rest after a bite. Underdamped on purpose — the
+      // overshoot past zero is the stretch half of squash-and-stretch.
       const s = dt / 1000;
-      squashV += (-42 * squash - 9 * squashV) * s;
+      squashV += (-42 * squash - 6.5 * squashV) * s;
       squash += squashV * s;
       if (Math.abs(squash) < 0.001 && Math.abs(squashV) < 0.01) { squash = 0; squashV = 0; }
     },
