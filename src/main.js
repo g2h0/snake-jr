@@ -425,7 +425,9 @@ function resumeCountdown() {
 }
 
 function startGame() {
-  music.stop();
+  // The gameplay loop starts on the Play press and carries through the
+  // 3-2-1-GO countdown, so the run never opens on silence.
+  music.startGame();
   const runBest = storage.getBest();
   const worldId = selectedWorldId(runBest);
   const world = getWorld(worldId);
@@ -449,6 +451,9 @@ function startGame() {
     onScoreChange(score, combo) {
       hudScore.textContent = score;
       hudCombo.textContent = combo > 1 ? `×${combo} 🔥` : "";
+      // The track brightens and pushes as the run gets good. It lands on the
+      // next loop boundary, never mid-bar.
+      music.setIntensity(score / 100);
       if (score > runBest) {
         hudBest.textContent = `★ ${score}`;
         hudBest.classList.add("newbest");
@@ -466,6 +471,7 @@ function startGame() {
     },
     onDeath({ score, prevBest, newBest }) {
       clearCountdown();
+      music.stop(); // clear the air for the death sting; openSubmit brings the menu loop back
       lastRunMeta = {
         score,
         prevBest,
@@ -523,6 +529,7 @@ function pauseGame() {
   if (!gameInstance || !gameInstance.isAlive() || gameInstance.isPaused()) return;
   gameInstance.pause();
   pauseCountdown();
+  music.stop(); // the loop restarts from the top on resume
   pauseOverlay.classList.add("show");
   sfx.uiTap();
   haptics.tap();
@@ -533,6 +540,8 @@ function resumeGame() {
   pauseOverlay.classList.remove("show");
   gameInstance.resume();
   resumeCountdown();
+  music.startGame();
+  music.setIntensity(gameInstance.getScore() / 100);
   sfx.uiTap();
   haptics.tap();
 }
