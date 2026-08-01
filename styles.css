@@ -774,3 +774,29 @@ body::before {
     font-size: 14px;
   }
 }
+
+/* ===== Reduce Motion =====
+   Everything that moves for decoration goes still; anything that carried
+   information (banners, the countdown, the new-best pill) cross-fades instead
+   so the moment still reads. The JS side lives in src/motion.js. */
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+  .bubble-btn { transition: none; }
+  .bubble-btn:hover { transform: none; }
+  .hud-pill.newbest { animation: none; }
+  .board-row.just-me { animation: none; }
+  #banner.show { animation: bannerFade 1.4s ease both; }
+  #countdown.show { animation: countFade 680ms ease both; }
+}
+@keyframes bannerFade {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  80%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes countFade {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+  18%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  72%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}

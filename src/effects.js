@@ -1,6 +1,12 @@
 // Visual juice: screen shake, floating score popups, confetti.
 // Banners are CSS-driven and triggered from main.js by toggling DOM nodes.
 
+import { REDUCED } from "./motion.js";
+
+// Reduce Motion keeps the feedback (you still see confetti) but drops the
+// camera moving under you and thins the swarm right down.
+function thin(count) { return REDUCED ? Math.max(1, Math.round(count / 3)) : count; }
+
 export function createEffects() {
   let shakeT = 0;
   let shakeMag = 0;
@@ -9,30 +15,36 @@ export function createEffects() {
 
   return {
     shake(mag = 8, ms = 200) {
+      if (REDUCED) return;
       shakeMag = Math.max(shakeMag, mag);
       shakeT = Math.max(shakeT, ms);
     },
     popup(x, y, text, color = "#fff") {
       popups.push({ x, y, text, color, t: 0, life: 900 });
     },
-    burstConfetti(x, y, count = 30, palette = ["#ff3bd4", "#36f1ff", "#8a4bff", "#ffe066"]) {
-      for (let i = 0; i < count; i++) {
+    // `size` is the piece width in px; speed and lifetime scale with it so a
+    // small splash stays local to the bite instead of spraying up the field.
+    burstConfetti(x, y, count = 30, palette = ["#ff3bd4", "#36f1ff", "#8a4bff", "#ffe066"], size = 6) {
+      const n = thin(count);
+      const scale = size / 6;
+      for (let i = 0; i < n; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = 80 + Math.random() * 240;
+        const speed = (80 + Math.random() * 240) * scale;
         confetti.push({
           x, y,
           vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed - 60,
-          size: 4 + Math.random() * 6,
+          vy: Math.sin(angle) * speed - 60 * scale,
+          size: size * 0.66 + Math.random() * size,
           color: palette[Math.floor(Math.random() * palette.length)],
           spin: Math.random() * Math.PI * 2,
           vspin: (Math.random() - 0.5) * 10,
           t: 0,
-          life: 1200 + Math.random() * 800,
+          life: (1200 + Math.random() * 800) * (0.3 + scale * 0.7),
         });
       }
     },
     rainConfetti(width, count = 80, palette = ["#ff3bd4", "#36f1ff", "#8a4bff", "#ffe066", "#ffffff"]) {
+      count = thin(count);
       for (let i = 0; i < count; i++) {
         confetti.push({
           x: Math.random() * width,
