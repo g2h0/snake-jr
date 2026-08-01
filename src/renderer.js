@@ -427,7 +427,6 @@ export function createRenderer(canvas) {
     bodyOpts.flash = deathFlash(deathT);
     bodyOpts.drain = deathDrain(deathT);
     for (let r = 0; r < runs; r++) {
-      const count = runRanges[r * 4 + 1];
       const idxFirst = runRanges[r * 4 + 2];
       bodyOpts.u0 = 1 - idxFirst / span;
       bodyOpts.u1 = 1 - runRanges[r * 4 + 3] / span;

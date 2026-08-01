@@ -172,12 +172,10 @@ function retireTrackBus(fadeSec) {
   const bus = trackBus;
   trackBus = null;
   if (!bus || !ctx) return;
-  if (fadeSec > 0) {
-    const now = ctx.currentTime;
-    bus.gain.cancelScheduledValues(now);
-    bus.gain.setValueAtTime(bus.gain.value, now);
-    bus.gain.linearRampToValueAtTime(0, now + fadeSec);
-  }
+  const now = ctx.currentTime;
+  bus.gain.cancelScheduledValues(now);
+  bus.gain.setValueAtTime(bus.gain.value, now);
+  bus.gain.linearRampToValueAtTime(0, now + Math.max(fadeSec, 0.3));
   // Disconnect only once the longest queued note (a ~1.3s drone scheduled up to
   // 0.2s ahead) has stopped, so nothing is cut off mid-tail.
   setTimeout(() => bus.disconnect(), 3000);
